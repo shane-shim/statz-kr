@@ -1,5 +1,5 @@
 """
-Statz-KR: 사회인야구 세이버메트릭스 툴
+미라클 동산 전용 세이버메트릭스
 Streamlit 웹 애플리케이션
 """
 
@@ -16,7 +16,7 @@ from sheets_db import MockSheetsDB, SheetsDB
 
 # 페이지 설정
 st.set_page_config(
-    page_title="Statz-KR",
+    page_title="미라클 동산",
     page_icon="⚾",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -141,8 +141,8 @@ def main():
     db = get_db()
 
     # 사이드바 - 네비게이션
-    st.sidebar.title("⚾ Statz-KR")
-    st.sidebar.markdown("사회인야구 세이버메트릭스")
+    st.sidebar.title("⚾ 미라클 동산")
+    st.sidebar.markdown("전용 세이버메트릭스")
     st.sidebar.divider()
 
     menu = st.sidebar.radio(
