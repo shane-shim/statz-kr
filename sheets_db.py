@@ -33,6 +33,7 @@ class SheetsDB:
         self.spreadsheet_url = spreadsheet_url or os.environ.get('STATZ_SPREADSHEET_URL')
         self._client = None
         self._spreadsheet = None
+        self._sheet_cache = {}  # 워크시트 캐싱
 
     def connect(self):
         """Google Sheets에 연결"""
@@ -54,12 +55,17 @@ class SheetsDB:
             raise ValueError("Spreadsheet URL not set.")
 
     def _get_or_create_sheet(self, title: str, headers: list) -> gspread.Worksheet:
-        """시트 가져오기 또는 생성"""
+        """시트 가져오기 또는 생성 (캐싱)"""
+        if title in self._sheet_cache:
+            return self._sheet_cache[title]
+
         try:
             worksheet = self._spreadsheet.worksheet(title)
         except gspread.WorksheetNotFound:
             worksheet = self._spreadsheet.add_worksheet(title=title, rows=1000, cols=len(headers))
             worksheet.append_row(headers)
+
+        self._sheet_cache[title] = worksheet
         return worksheet
 
     # === 선수 관리 ===
@@ -131,6 +137,25 @@ class SheetsDB:
                           walks, strikeouts, hit_by_pitch, sacrifice_flies, sacrifice_bunts,
                           datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
         return record_id
+
+    def add_at_bats_batch(self, records: list) -> int:
+        """타석 기록 배치 추가 (API 호출 최소화)"""
+        if not records:
+            return 0
+        sheet = self.get_at_bats_sheet()
+        rows = []
+        for r in records:
+            record_id = f"AB{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+            rows.append([
+                record_id, r['game_id'], r['player_id'], r['player_name'],
+                r['inning'], r['batting_order'], r['result'], r['hit_type'],
+                r['rbis'], r['runs'], r['stolen_bases'], r['caught_stealing'],
+                r['walks'], r['strikeouts'], r['hit_by_pitch'],
+                r['sacrifice_flies'], r['sacrifice_bunts'],
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            ])
+        sheet.append_rows(rows)
+        return len(rows)
 
     def get_at_bats(self, game_id: Optional[str] = None, player_id: Optional[str] = None) -> pd.DataFrame:
         sheet = self.get_at_bats_sheet()

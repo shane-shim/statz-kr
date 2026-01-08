@@ -376,12 +376,14 @@ def main():
 
     menu = st.sidebar.radio(
         "메뉴",
-        ["대시보드", "성장 리포트", "팀 인사이트", "경기 기록", "선수 통계", "선수 관리", "경기 관리"],
+        ["대시보드", "🧠 AI 코치", "성장 리포트", "팀 인사이트", "경기 기록", "선수 통계", "선수 관리", "경기 관리"],
         label_visibility="collapsed"
     )
 
     if menu == "대시보드":
         show_dashboard(db)
+    elif menu == "🧠 AI 코치":
+        show_ai_coach(db)
     elif menu == "성장 리포트":
         show_growth_report(db)
     elif menu == "팀 인사이트":
@@ -1040,6 +1042,599 @@ def show_growth_report(db):
 
     if not advice_list:
         st.info("충분한 데이터가 쌓이면 맞춤형 조언을 제공합니다!")
+
+
+# === 세이버메트릭스 지표 설명 ===
+METRIC_EXPLANATIONS = {
+    'AVG': {
+        'name': '타율 (AVG)',
+        'formula': '안타 ÷ 타수',
+        'meaning': '타자가 타석에 들어서서 안타를 칠 확률',
+        'intuition': '10번 타석에서 3번 안타 = 0.300 (3할 타자)',
+        'good': '0.300 이상이면 훌륭한 타자',
+        'interpret': {
+            'excellent': (0.350, '리그 최상위 타자. 투수들이 두려워하는 타자입니다.'),
+            'good': (0.300, '믿음직한 타자. 중심타선에 적합합니다.'),
+            'average': (0.250, '평균적인 타자. 꾸준한 연습이 필요합니다.'),
+            'below': (0.200, '개선이 필요합니다. 기본기를 점검하세요.')
+        }
+    },
+    'OBP': {
+        'name': '출루율 (OBP)',
+        'formula': '(안타 + 볼넷 + 사구) ÷ (타수 + 볼넷 + 사구 + 희비)',
+        'meaning': '타자가 어떤 방식으로든 출루할 확률',
+        'intuition': '볼넷도 포함! 선구안 좋은 타자일수록 높음',
+        'good': '0.360 이상이면 출루 능력 우수',
+        'interpret': {
+            'excellent': (0.420, '출루 머신! 1번이나 2번 타자로 최적입니다.'),
+            'good': (0.360, '좋은 출루 능력. 득점권에서 믿음직합니다.'),
+            'average': (0.300, '평균 수준. 볼 선구 연습이 도움됩니다.'),
+            'below': (0.250, '출루 기회를 놓치고 있습니다. 선구안 훈련 필요.')
+        }
+    },
+    'SLG': {
+        'name': '장타율 (SLG)',
+        'formula': '총루타 ÷ 타수',
+        'meaning': '타수당 평균 진루 베이스 수 (장타력 지표)',
+        'intuition': '1루타=1, 2루타=2, 3루타=3, 홈런=4로 계산',
+        'good': '0.450 이상이면 장타력 우수',
+        'interpret': {
+            'excellent': (0.550, '강력한 장타력! 클린업 트리오에 적합합니다.'),
+            'good': (0.450, '좋은 장타력. 중심타선 배치 가능.'),
+            'average': (0.350, '평균 장타력. 파워 훈련이 필요합니다.'),
+            'below': (0.250, '장타 부족. 근력 강화와 스윙 메커니즘 점검 필요.')
+        }
+    },
+    'OPS': {
+        'name': 'OPS (출루율 + 장타율)',
+        'formula': 'OBP + SLG',
+        'meaning': '출루 능력과 장타력을 합친 종합 타격 지표',
+        'intuition': '한 숫자로 타자의 전체 공격력을 평가',
+        'good': '0.800 이상이면 우수한 타자',
+        'interpret': {
+            'excellent': (0.950, '엘리트 타자! MVP급 활약이 가능합니다.'),
+            'good': (0.800, '팀의 핵심 타자. 중요한 순간을 맡길 수 있습니다.'),
+            'average': (0.650, '평균 타자. 특정 역할에 맞춰 활용하세요.'),
+            'below': (0.550, '공격력 부족. 전반적인 타격 훈련이 필요합니다.')
+        }
+    },
+    'ISO': {
+        'name': 'ISO (순수 장타력)',
+        'formula': 'SLG - AVG',
+        'meaning': '순수하게 장타에서 나오는 파워 (타율 제외)',
+        'intuition': '높을수록 홈런, 2루타, 3루타를 많이 침',
+        'good': '0.150 이상이면 파워 히터',
+        'interpret': {
+            'excellent': (0.200, '강력한 파워 히터! 한방이 있는 타자입니다.'),
+            'good': (0.150, '좋은 장타력. 결정적인 한방을 기대할 수 있습니다.'),
+            'average': (0.100, '평균 파워. 장타 훈련으로 개선 가능합니다.'),
+            'below': (0.050, '컨택 위주 타자. 장타보다 출루에 집중하세요.')
+        }
+    },
+    'wOBA': {
+        'name': 'wOBA (가중 출루율)',
+        'formula': '각 타격 결과에 가중치를 부여한 출루율',
+        'meaning': '모든 타격 결과의 실제 득점 기여도 반영',
+        'intuition': '홈런 > 3루타 > 2루타 > 1루타 > 볼넷 순으로 가치 부여',
+        'good': '0.340 이상이면 리그 평균 이상',
+        'interpret': {
+            'excellent': (0.400, '최상위 타자! 득점 생산력이 뛰어납니다.'),
+            'good': (0.340, '평균 이상의 타자. 팀에 도움이 됩니다.'),
+            'average': (0.300, '평균 수준. 더 좋은 타격 결과를 만들어보세요.'),
+            'below': (0.250, '타격 기여도 개선 필요. 기본기를 다지세요.')
+        }
+    },
+    'K%': {
+        'name': '삼진율 (K%)',
+        'formula': '삼진 ÷ 타석',
+        'meaning': '타석에서 삼진당할 확률',
+        'intuition': '낮을수록 좋음! 컨택 능력의 지표',
+        'good': '15% 이하면 컨택 능력 우수',
+        'interpret': {
+            'excellent': (10, '뛰어난 컨택 능력! 배트에 맞추는 기술이 좋습니다.'),
+            'good': (15, '좋은 컨택. 안정적인 타자입니다.'),
+            'average': (22, '평균 수준. 스윙 선택을 더 신중히 하세요.'),
+            'below': (30, '삼진이 많습니다. 볼 선구와 스윙 타이밍 점검 필요.')
+        }
+    },
+    'BB%': {
+        'name': '볼넷율 (BB%)',
+        'formula': '볼넷 ÷ 타석',
+        'meaning': '타석에서 볼넷을 얻을 확률',
+        'intuition': '높을수록 선구안이 좋음!',
+        'good': '10% 이상이면 선구안 우수',
+        'interpret': {
+            'excellent': (15, '훌륭한 선구안! 투수를 괴롭히는 타자입니다.'),
+            'good': (10, '좋은 선구안. 출루 기회를 잘 만듭니다.'),
+            'average': (7, '평균 수준. 더 참을성 있게 볼을 고르세요.'),
+            'below': (5, '볼넷이 적습니다. 스트라이크 존 인식 훈련 필요.')
+        }
+    }
+}
+
+# === 훈련 프로그램 ===
+TRAINING_PROGRAMS = {
+    'contact': {
+        'name': '컨택 능력 향상 훈련',
+        'target': '삼진율 감소, 타율 향상',
+        'drills': [
+            ('소프트토스 100회', '느린 공으로 정확한 스윙 궤도 연습'),
+            ('티배팅 50회', '일정한 위치에서 반복 스윙으로 일관성 확보'),
+            ('슬로우볼 배팅', '타이밍 조절 능력 향상'),
+            ('번트 연습 20회', '배트 컨트롤과 공 보는 눈 향상'),
+            ('2스트라이크 상황 연습', '파울로 버티는 연습')
+        ]
+    },
+    'power': {
+        'name': '장타력 강화 훈련',
+        'target': 'ISO 향상, 장타율 증가',
+        'drills': [
+            ('웨이트 트레이닝 (하체)', '스쿼트, 런지로 하체 근력 강화'),
+            ('코어 운동', '회전력의 원천인 코어 근육 강화'),
+            ('긴 배트 스윙 연습', '스윙 스피드 향상'),
+            ('탑핸드/바텀핸드 드릴', '손목 힘과 배트 헤드 스피드 강화'),
+            ('실전 장타 연습', '외야 깊숙이 보내는 스윙 궤도 연습')
+        ]
+    },
+    'eye': {
+        'name': '선구안 향상 훈련',
+        'target': '볼넷율 증가, 출루율 향상',
+        'drills': [
+            ('스트라이크 존 인식 훈련', '투수 영상 보며 볼/스트라이크 판단'),
+            ('노스윙 드릴', '스트라이크만 보고 스윙하지 않는 연습'),
+            ('카운트별 접근법', '유리한/불리한 카운트별 전략 학습'),
+            ('투수 성향 분석', '상대 투수의 투구 패턴 파악'),
+            ('참을성 훈련', '초구 스트라이크에도 참고 보는 연습')
+        ]
+    },
+    'slump': {
+        'name': '슬럼프 탈출 프로그램',
+        'target': '자신감 회복, 기본기 재정립',
+        'drills': [
+            ('기본 스윙 폼 점검', '거울 앞에서 스윙 폼 교정'),
+            ('느린 공 배팅', '타이밍과 밸런스 재확인'),
+            ('성공 경험 쌓기', '쉬운 공부터 자신감 회복'),
+            ('영상 분석', '잘 칠 때와 못 칠 때 비교 분석'),
+            ('멘탈 트레이닝', '긍정적 루틴과 집중력 훈련')
+        ]
+    },
+    'consistency': {
+        'name': '꾸준함 유지 훈련',
+        'target': '컨디션 관리, 일관된 성적',
+        'drills': [
+            ('데일리 루틴 확립', '매일 같은 준비 루틴 유지'),
+            ('스트레칭/컨디셔닝', '부상 방지와 몸 상태 유지'),
+            ('상황별 배팅 연습', '다양한 상황에 대한 대응력 향상'),
+            ('피로 관리', '적절한 휴식과 영양 섭취'),
+            ('정신력 훈련', '집중력과 평정심 유지')
+        ]
+    }
+}
+
+
+def show_ai_coach(db):
+    """감독용 AI 코치 (고도화)"""
+    st.title("🧠 AI 코치")
+    st.caption("세이버메트릭스 기반 맞춤 분석 & 훈련 프로그램")
+
+    tab1, tab2, tab3, tab4 = st.tabs(["📖 지표 가이드", "👤 선수 분석", "👥 팀 분석", "📋 훈련 프로그램"])
+
+    # === 탭1: 지표 가이드 ===
+    with tab1:
+        st.subheader("📖 세이버메트릭스 지표 완벽 가이드")
+        st.markdown("각 지표가 무엇을 의미하는지, 어떻게 해석해야 하는지 알아보세요.")
+
+        # 지표 선택
+        metric_choice = st.selectbox(
+            "지표 선택",
+            list(METRIC_EXPLANATIONS.keys()),
+            format_func=lambda x: METRIC_EXPLANATIONS[x]['name']
+        )
+
+        metric = METRIC_EXPLANATIONS[metric_choice]
+
+        # 지표 설명 카드
+        st.markdown(f"""
+        <div style="background: #16213e; padding: 20px; border-radius: 15px; border: 2px solid #1e88e5; margin: 15px 0;">
+            <h2 style="color: #64b5f6; margin-bottom: 15px;">{metric['name']}</h2>
+
+            <div style="margin-bottom: 15px;">
+                <span style="color: #a0aec0; font-size: 0.9rem;">계산 공식</span><br/>
+                <span style="color: #e2e8f0; font-size: 1.1rem; font-family: monospace;">{metric['formula']}</span>
+            </div>
+
+            <div style="margin-bottom: 15px;">
+                <span style="color: #a0aec0; font-size: 0.9rem;">의미</span><br/>
+                <span style="color: #e2e8f0; font-size: 1.1rem;">{metric['meaning']}</span>
+            </div>
+
+            <div style="margin-bottom: 15px;">
+                <span style="color: #a0aec0; font-size: 0.9rem;">쉽게 이해하기</span><br/>
+                <span style="color: #81c784; font-size: 1.1rem;">💡 {metric['intuition']}</span>
+            </div>
+
+            <div style="background: #0f3460; padding: 10px; border-radius: 8px;">
+                <span style="color: #64b5f6;">✓ 좋은 기준: {metric['good']}</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # 해석 가이드
+        st.markdown("#### 📊 결과 해석 가이드")
+        interpret = metric['interpret']
+
+        for level, (threshold, desc) in interpret.items():
+            if level == 'excellent':
+                color, icon = '#64b5f6', '🔥'
+            elif level == 'good':
+                color, icon = '#81c784', '👍'
+            elif level == 'average':
+                color, icon = '#ffb74d', '📊'
+            else:
+                color, icon = '#e57373', '⚠️'
+
+            # K%는 낮을수록 좋음
+            if metric_choice == 'K%':
+                comparison = f"{threshold}% 이하"
+            elif metric_choice == 'BB%':
+                comparison = f"{threshold}% 이상"
+            else:
+                comparison = f"{threshold:.3f} 이상" if isinstance(threshold, float) else f"{threshold} 이상"
+
+            st.markdown(f"""
+            <div style="display: flex; align-items: center; padding: 10px; background: #16213e; margin: 5px 0; border-radius: 8px; border-left: 4px solid {color};">
+                <span style="font-size: 1.5rem; margin-right: 10px;">{icon}</span>
+                <div>
+                    <span style="color: {color}; font-weight: bold;">{comparison}</span><br/>
+                    <span style="color: #a0aec0;">{desc}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    # === 탭2: 선수 분석 ===
+    with tab2:
+        st.subheader("👤 선수별 심층 분석")
+
+        players = load_players(db)
+        if len(players) == 0:
+            st.warning("등록된 선수가 없습니다.")
+        else:
+            player_options = {row['이름']: row['선수ID'] for _, row in players.iterrows()}
+            selected_player = st.selectbox("분석할 선수 선택", list(player_options.keys()), key="ai_coach_player")
+            player_id = player_options[selected_player]
+
+            at_bats = load_at_bats(db, player_id=player_id)
+
+            if len(at_bats) == 0:
+                st.info(f"{selected_player} 선수의 기록이 없습니다.")
+            else:
+                # 통계 계산
+                stats = calculate_player_batting_stats(at_bats)
+                calc = SabermetricsCalculator
+
+                avg = calc.avg(stats) or 0
+                obp = calc.obp(stats) or 0
+                slg = calc.slg(stats) or 0
+                ops = calc.ops(stats) or 0
+                iso = calc.iso(stats) or 0
+                woba = calc.woba(stats) or 0
+                k_rate = (stats.strikeouts / stats.plate_appearances * 100) if stats.plate_appearances > 0 else 0
+                bb_rate = (stats.walks / stats.plate_appearances * 100) if stats.plate_appearances > 0 else 0
+
+                # 선수 프로필 카드
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #1e88e5 0%, #0f3460 100%); padding: 20px; border-radius: 15px; margin-bottom: 20px;">
+                    <h2 style="color: white; margin: 0;">{selected_player}</h2>
+                    <p style="color: #a0aec0; margin: 5px 0;">{stats.plate_appearances}타석 | {stats.at_bats}타수 | {stats.hits}안타 | {stats.home_runs}홈런</p>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # 지표별 분석
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    display_stat_with_grade("타율", avg, "AVG")
+                with col2:
+                    display_stat_with_grade("출루율", obp, "OBP")
+                with col3:
+                    display_stat_with_grade("장타율", slg, "SLG")
+                with col4:
+                    display_stat_with_grade("OPS", ops, "OPS")
+
+                col1, col2, col3, col4 = st.columns(4)
+                with col1:
+                    display_stat_with_grade("ISO", iso, "ISO" if iso else None, ".3f")
+                with col2:
+                    display_stat_with_grade("wOBA", woba, "wOBA" if woba else None, ".3f")
+                with col3:
+                    st.markdown(f"""
+                    <div style="text-align: center; padding: 12px; background: #16213e; border-radius: 10px; margin: 5px 0; border: 1px solid #0f3460;">
+                        <div style="font-size: 0.85rem; color: #a0aec0;">삼진율</div>
+                        <div style="font-size: 1.8rem; font-weight: bold; color: {'#e57373' if k_rate > 25 else '#81c784' if k_rate < 15 else '#e2e8f0'};">{k_rate:.1f}%</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col4:
+                    st.markdown(f"""
+                    <div style="text-align: center; padding: 12px; background: #16213e; border-radius: 10px; margin: 5px 0; border: 1px solid #0f3460;">
+                        <div style="font-size: 0.85rem; color: #a0aec0;">볼넷율</div>
+                        <div style="font-size: 1.8rem; font-weight: bold; color: {'#81c784' if bb_rate > 10 else '#e57373' if bb_rate < 5 else '#e2e8f0'};">{bb_rate:.1f}%</div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                st.divider()
+
+                # AI 분석 및 조언
+                st.markdown("### 🤖 AI 분석 결과")
+
+                # 강점/약점 분석
+                strengths = []
+                weaknesses = []
+                training_needs = []
+
+                if avg >= 0.300:
+                    strengths.append(f"타율 {avg:.3f}로 뛰어난 타격 실력")
+                elif avg < 0.230:
+                    weaknesses.append(f"타율 {avg:.3f}로 개선 필요")
+                    training_needs.append('contact')
+
+                if obp >= 0.360:
+                    strengths.append(f"출루율 {obp:.3f}로 출루 능력 우수")
+                elif obp < 0.280:
+                    weaknesses.append(f"출루율 {obp:.3f}로 출루 기회 부족")
+                    training_needs.append('eye')
+
+                if iso >= 0.150:
+                    strengths.append(f"ISO {iso:.3f}로 장타력 보유")
+                elif iso < 0.080:
+                    weaknesses.append(f"ISO {iso:.3f}로 장타력 부족")
+                    training_needs.append('power')
+
+                if k_rate < 15:
+                    strengths.append(f"삼진율 {k_rate:.1f}%로 컨택 능력 우수")
+                elif k_rate > 28:
+                    weaknesses.append(f"삼진율 {k_rate:.1f}%로 삼진 과다")
+                    training_needs.append('contact')
+
+                if bb_rate > 10:
+                    strengths.append(f"볼넷율 {bb_rate:.1f}%로 선구안 좋음")
+                elif bb_rate < 5:
+                    weaknesses.append(f"볼넷율 {bb_rate:.1f}%로 선구안 개선 필요")
+                    training_needs.append('eye')
+
+                # 강점 표시
+                if strengths:
+                    st.markdown("#### 💪 강점")
+                    for s in strengths:
+                        st.markdown(f"""
+                        <div style="background: #1b4332; padding: 10px 15px; border-radius: 8px; margin: 5px 0; border-left: 4px solid #81c784;">
+                            <span style="color: #95d5b2;">✓ {s}</span>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                # 약점 표시
+                if weaknesses:
+                    st.markdown("#### ⚠️ 개선 필요")
+                    for w in weaknesses:
+                        st.markdown(f"""
+                        <div style="background: #3d1e1e; padding: 10px 15px; border-radius: 8px; margin: 5px 0; border-left: 4px solid #e57373;">
+                            <span style="color: #f8a0a0;">! {w}</span>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                st.divider()
+
+                # 맞춤 훈련 추천
+                st.markdown("### 📋 맞춤 훈련 프로그램")
+
+                if not training_needs:
+                    training_needs = ['consistency']  # 기본은 꾸준함 유지
+
+                recommended_programs = list(set(training_needs))[:2]  # 최대 2개
+
+                for prog_key in recommended_programs:
+                    prog = TRAINING_PROGRAMS[prog_key]
+                    st.markdown(f"""
+                    <div style="background: #16213e; padding: 15px; border-radius: 10px; margin: 10px 0; border: 1px solid #1e88e5;">
+                        <h4 style="color: #64b5f6; margin: 0 0 10px 0;">🎯 {prog['name']}</h4>
+                        <p style="color: #a0aec0; margin-bottom: 10px;">목표: {prog['target']}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                    for drill_name, drill_desc in prog['drills']:
+                        st.markdown(f"""
+                        <div style="display: flex; padding: 8px 15px; background: #0f3460; margin: 3px 0; border-radius: 5px;">
+                            <span style="color: #64b5f6; margin-right: 10px;">•</span>
+                            <div>
+                                <span style="color: #e2e8f0; font-weight: bold;">{drill_name}</span><br/>
+                                <span style="color: #a0aec0; font-size: 0.85rem;">{drill_desc}</span>
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+    # === 탭3: 팀 분석 ===
+    with tab3:
+        st.subheader("👥 팀 전체 분석 (감독 뷰)")
+
+        players = load_players(db)
+        at_bats = load_at_bats(db)
+
+        if len(players) == 0 or len(at_bats) == 0:
+            st.warning("분석할 데이터가 없습니다.")
+        else:
+            # 팀 전체 통계
+            team_stats = calculate_player_batting_stats(at_bats)
+            calc = SabermetricsCalculator
+
+            team_avg = calc.avg(team_stats) or 0
+            team_obp = calc.obp(team_stats) or 0
+            team_slg = calc.slg(team_stats) or 0
+            team_ops = calc.ops(team_stats) or 0
+
+            st.markdown("#### 📊 팀 전체 성적")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                display_stat_with_grade("팀 타율", team_avg, "AVG")
+            with col2:
+                display_stat_with_grade("팀 출루율", team_obp, "OBP")
+            with col3:
+                display_stat_with_grade("팀 장타율", team_slg, "SLG")
+            with col4:
+                display_stat_with_grade("팀 OPS", team_ops, "OPS")
+
+            st.divider()
+
+            # 선수별 분석 테이블
+            st.markdown("#### 🔍 선수별 상세 분석")
+
+            player_analysis = []
+            for _, player in players.iterrows():
+                player_abs = at_bats[at_bats['선수ID'] == player['선수ID']]
+                if len(player_abs) == 0:
+                    continue
+
+                stats = calculate_player_batting_stats(player_abs)
+                if stats.plate_appearances < 3:
+                    continue
+
+                avg = calc.avg(stats) or 0
+                ops = calc.ops(stats) or 0
+                iso = calc.iso(stats) or 0
+                k_rate = (stats.strikeouts / stats.plate_appearances * 100) if stats.plate_appearances > 0 else 0
+                bb_rate = (stats.walks / stats.plate_appearances * 100) if stats.plate_appearances > 0 else 0
+
+                # 타입 판별
+                if iso >= 0.150 and k_rate > 20:
+                    player_type = "파워 히터"
+                elif avg >= 0.300 and k_rate < 15:
+                    player_type = "컨택 히터"
+                elif bb_rate > 10 and obp > avg + 0.070:
+                    player_type = "출루형"
+                elif ops >= 0.800:
+                    player_type = "올라운더"
+                else:
+                    player_type = "균형형"
+
+                # 개선 포인트
+                issues = []
+                if k_rate > 25:
+                    issues.append("삼진↓")
+                if bb_rate < 5:
+                    issues.append("선구안↑")
+                if iso < 0.080:
+                    issues.append("장타력↑")
+                if avg < 0.220:
+                    issues.append("타율↑")
+
+                player_analysis.append({
+                    '선수': player['이름'],
+                    '타석': stats.plate_appearances,
+                    '타율': avg,
+                    'OPS': ops,
+                    'K%': k_rate,
+                    'BB%': bb_rate,
+                    '타입': player_type,
+                    '개선점': ', '.join(issues) if issues else '양호'
+                })
+
+            if player_analysis:
+                analysis_df = pd.DataFrame(player_analysis)
+
+                # 스타일 적용
+                def style_improvements(val):
+                    if val == '양호':
+                        return 'color: #81c784'
+                    return 'color: #ffb74d'
+
+                styled = analysis_df.style.format({
+                    '타율': '{:.3f}',
+                    'OPS': '{:.3f}',
+                    'K%': '{:.1f}%',
+                    'BB%': '{:.1f}%'
+                }).map(style_improvements, subset=['개선점'])
+
+                st.dataframe(styled, hide_index=True, use_container_width=True)
+
+                st.divider()
+
+                # 감독 조언
+                st.markdown("#### 💡 감독님께 드리는 조언")
+
+                # 분석 기반 조언 생성
+                advice_items = []
+
+                # 팀 삼진율 분석
+                high_k_players = [p for p in player_analysis if p['K%'] > 25]
+                if len(high_k_players) >= 3:
+                    names = ', '.join([p['선수'] for p in high_k_players[:3]])
+                    advice_items.append(("👁️", "선구안 훈련 필요", f"{names} 선수들의 삼진율이 높습니다. 팀 전체 선구안 훈련을 권장합니다."))
+
+                # 장타력 분석
+                low_iso_players = [p for p in player_analysis if p['OPS'] < 0.600]
+                if len(low_iso_players) >= 3:
+                    advice_items.append(("💪", "공격력 강화 필요", f"{len(low_iso_players)}명의 선수가 OPS 0.600 미만입니다. 팀 전체 파워 훈련을 고려하세요."))
+
+                # 강점 분석
+                good_hitters = [p for p in player_analysis if p['타율'] >= 0.300]
+                if good_hitters:
+                    names = ', '.join([p['선수'] for p in good_hitters])
+                    advice_items.append(("🌟", "핵심 타자", f"{names} 선수가 팀의 핵심 공격진입니다. 중심타선 배치를 권장합니다."))
+
+                # 출루형 선수
+                obp_players = [p for p in player_analysis if p['BB%'] > 10]
+                if obp_players:
+                    names = ', '.join([p['선수'] for p in obp_players])
+                    advice_items.append(("🎯", "리드오프 후보", f"{names} 선수는 선구안이 좋아 1~2번 타순에 적합합니다."))
+
+                for icon, title, content in advice_items:
+                    st.markdown(f"""
+                    <div style="background: #16213e; border-left: 4px solid #1e88e5; padding: 15px; margin: 10px 0; border-radius: 10px;">
+                        <strong style="color: #e2e8f0;">{icon} {title}</strong><br/>
+                        <span style="color: #a0aec0;">{content}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+    # === 탭4: 훈련 프로그램 ===
+    with tab4:
+        st.subheader("📋 훈련 프로그램 가이드")
+        st.markdown("목적에 맞는 훈련 프로그램을 선택하세요.")
+
+        program_choice = st.selectbox(
+            "훈련 프로그램 선택",
+            list(TRAINING_PROGRAMS.keys()),
+            format_func=lambda x: TRAINING_PROGRAMS[x]['name']
+        )
+
+        prog = TRAINING_PROGRAMS[program_choice]
+
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #1e88e5 0%, #0f3460 100%); padding: 25px; border-radius: 15px; margin: 15px 0;">
+            <h2 style="color: white; margin: 0 0 10px 0;">🎯 {prog['name']}</h2>
+            <p style="color: #a0aec0; font-size: 1.1rem;">목표: {prog['target']}</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("#### 훈련 메뉴")
+
+        for i, (drill_name, drill_desc) in enumerate(prog['drills'], 1):
+            st.markdown(f"""
+            <div style="display: flex; padding: 15px; background: #16213e; margin: 8px 0; border-radius: 10px; border: 1px solid #0f3460;">
+                <div style="background: #1e88e5; color: white; width: 35px; height: 35px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 15px; font-weight: bold;">{i}</div>
+                <div style="flex: 1;">
+                    <span style="color: #e2e8f0; font-size: 1.1rem; font-weight: bold;">{drill_name}</span><br/>
+                    <span style="color: #a0aec0;">{drill_desc}</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        # 추가 팁
+        st.markdown("#### 💡 훈련 팁")
+        tips = {
+            'contact': "배팅 전 충분한 스트레칭과 워밍업을 하세요. 처음에는 느린 공으로 시작해서 점점 빠른 공으로 넘어가세요.",
+            'power': "파워 훈련은 부상 위험이 있으니 준비운동을 철저히 하세요. 무리한 스윙보다 올바른 폼이 중요합니다.",
+            'eye': "실제 경기 영상을 많이 보면서 볼/스트라이크를 판단하는 연습을 해보세요. 투수의 투구 폼에서 공의 궤적을 예측하는 연습도 도움됩니다.",
+            'slump': "슬럼프는 누구에게나 옵니다. 너무 결과에 집착하지 말고 과정에 집중하세요. 작은 성공부터 쌓아가세요.",
+            'consistency': "매일 같은 루틴을 유지하는 것이 중요합니다. 수면, 식사, 훈련 시간을 일정하게 관리하세요."
+        }
+        st.info(tips.get(program_choice, "꾸준한 훈련이 실력 향상의 지름길입니다!"))
 
 
 def show_team_insight(db):
