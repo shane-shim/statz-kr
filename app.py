@@ -13,6 +13,7 @@ from sabermetrics import (
     format_avg, format_era, format_percentage
 )
 from sheets_db import MockSheetsDB, SheetsDB
+import time
 
 # 페이지 설정
 st.set_page_config(
@@ -145,6 +146,30 @@ def get_db():
     return st.session_state.db
 
 
+@st.cache_data(ttl=60)  # 60초 캐싱
+def load_games(_db):
+    """경기 데이터 캐싱 로드"""
+    return _db.get_games()
+
+
+@st.cache_data(ttl=60)
+def load_players(_db):
+    """선수 데이터 캐싱 로드"""
+    return _db.get_players()
+
+
+@st.cache_data(ttl=60)
+def load_at_bats(_db, game_id=None, player_id=None):
+    """타석 데이터 캐싱 로드"""
+    return _db.get_at_bats(game_id=game_id, player_id=player_id)
+
+
+@st.cache_data(ttl=60)
+def load_pitching(_db, game_id=None, player_id=None):
+    """투구 데이터 캐싱 로드"""
+    return _db.get_pitching(game_id=game_id, player_id=player_id)
+
+
 def calculate_player_batting_stats(df: pd.DataFrame) -> BattingStats:
     """타석 기록 DataFrame에서 BattingStats 계산"""
     stats = BattingStats()
@@ -243,8 +268,16 @@ def show_dashboard(db):
     """대시보드 화면"""
     st.title("대시보드")
 
-    games = db.get_games()
-    players = db.get_players()
+    try:
+        games = load_games(db)
+        players = load_players(db)
+    except Exception as e:
+        st.error("데이터를 불러오는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+        st.caption(f"오류: {type(e).__name__}")
+        if st.button("새로고침"):
+            st.cache_data.clear()
+            st.rerun()
+        return
 
     # 팀 성적 요약
     col1, col2, col3, col4 = st.columns(4)
@@ -271,7 +304,7 @@ def show_dashboard(db):
 
     with col1:
         st.subheader("타율 TOP 5")
-        at_bats = db.get_at_bats()
+        at_bats = load_at_bats(db)
         if len(at_bats) > 0:
             player_avgs = []
             for player_id in at_bats['선수ID'].unique():
@@ -346,8 +379,8 @@ def show_game_recording(db):
     """경기 기록 화면"""
     st.title("경기 기록 입력")
 
-    games = db.get_games()
-    players = db.get_players()
+    games = load_games(db)
+    players = load_players(db)
 
     if len(games) == 0:
         st.warning("먼저 경기를 등록해주세요.")
@@ -431,7 +464,7 @@ def show_game_recording(db):
         # 이 경기 타석 기록 표시
         st.divider()
         st.subheader("이 경기 타석 기록")
-        game_at_bats = db.get_at_bats(game_id=game_id)
+        game_at_bats = load_at_bats(db, game_id=game_id)
         if len(game_at_bats) > 0:
             display_cols = ['선수명', '이닝', '타순', '결과', '안타종류', '타점', '득점']
             st.dataframe(game_at_bats[display_cols], hide_index=True, use_container_width=True)
@@ -487,7 +520,7 @@ def show_game_recording(db):
         # 이 경기 투구 기록 표시
         st.divider()
         st.subheader("이 경기 투구 기록")
-        game_pitching = db.get_pitching(game_id=game_id)
+        game_pitching = load_pitching(db, game_id=game_id)
         if len(game_pitching) > 0:
             display_cols = ['선수명', '이닝', '피안타', '자책', '볼넷', '삼진']
             st.dataframe(game_pitching[display_cols], hide_index=True, use_container_width=True)
@@ -499,7 +532,7 @@ def show_player_stats(db):
     """선수 통계 화면"""
     st.title("선수 통계")
 
-    players = db.get_players()
+    players = load_players(db)
 
     if len(players) == 0:
         st.warning("등록된 선수가 없습니다.")
@@ -522,7 +555,7 @@ def show_player_stats(db):
     tab1, tab2 = st.tabs(["타격 기록", "투구 기록"])
 
     with tab1:
-        at_bats = db.get_at_bats(player_id=player_id)
+        at_bats = load_at_bats(db, player_id=player_id)
 
         if len(at_bats) == 0:
             st.info("타격 기록이 없습니다.")
@@ -591,7 +624,7 @@ def show_player_stats(db):
             )
 
     with tab2:
-        pitching = db.get_pitching(player_id=player_id)
+        pitching = load_pitching(db, player_id=player_id)
 
         if len(pitching) == 0:
             st.info("투구 기록이 없습니다.")
@@ -673,7 +706,7 @@ def show_player_management(db):
 
     with tab2:
         st.subheader("등록된 선수")
-        players = db.get_players()
+        players = load_players(db)
 
         if len(players) > 0:
             st.dataframe(
@@ -726,7 +759,7 @@ def show_game_management(db):
 
     with tab2:
         st.subheader("경기 목록")
-        games = db.get_games()
+        games = load_games(db)
 
         if len(games) > 0:
             # 결과별 색상
