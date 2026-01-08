@@ -1273,13 +1273,17 @@ def show_ai_coach(db):
             else:
                 color, icon = '#e57373', '⚠️'
 
-            # K%는 낮을수록 좋음
+            # K%는 낮을수록 좋음, BB%는 높을수록 좋음
             if metric_choice == 'K%':
-                comparison = f"{threshold}% 이하"
+                comparison = f"{int(threshold)}% 이하"
             elif metric_choice == 'BB%':
-                comparison = f"{threshold}% 이상"
+                comparison = f"{int(threshold)}% 이상"
             else:
-                comparison = f"{threshold:.3f} 이상" if isinstance(threshold, float) else f"{threshold} 이상"
+                # 소수점 지표 (AVG, OBP, SLG, OPS, ISO, wOBA)
+                try:
+                    comparison = f"{float(threshold):.3f} 이상"
+                except:
+                    comparison = f"{threshold} 이상"
 
             st.markdown(f"""
             <div style="display: flex; align-items: center; padding: 10px; background: #16213e; margin: 5px 0; border-radius: 8px; border-left: 4px solid {color};">
@@ -1930,7 +1934,7 @@ def show_game_management(db):
                     return 'background-color: #3d1e1e; color: #f8a0a0'
                 return ''
 
-            styled_df = games[['날짜', '상대팀', '홈/원정', '우리점수', '상대점수', '결과', '구장']].style.applymap(
+            styled_df = games[['날짜', '상대팀', '홈/원정', '우리점수', '상대점수', '결과', '구장']].style.map(
                 highlight_result, subset=['결과']
             )
             st.dataframe(styled_df, hide_index=True, use_container_width=True)
