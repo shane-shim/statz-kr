@@ -1249,31 +1249,23 @@ def show_ai_coach(db):
 
         metric = METRIC_EXPLANATIONS[metric_choice]
 
-        # 지표 설명 카드
-        st.markdown(f"""
-        <div style="background: #16213e; padding: 20px; border-radius: 15px; border: 2px solid #1e88e5; margin: 15px 0;">
-            <h2 style="color: #64b5f6; margin-bottom: 15px;">{metric['name']}</h2>
+        # 지표 설명 카드 - Streamlit 기본 컴포넌트 사용
+        st.markdown(f"## {metric['name']}")
 
-            <div style="margin-bottom: 15px;">
-                <span style="color: #a0aec0; font-size: 0.9rem;">계산 공식</span><br/>
-                <span style="color: #e2e8f0; font-size: 1.1rem; font-family: monospace;">{metric['formula']}</span>
-            </div>
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**📐 계산 공식**")
+            st.code(metric['formula'], language=None)
 
-            <div style="margin-bottom: 15px;">
-                <span style="color: #a0aec0; font-size: 0.9rem;">의미</span><br/>
-                <span style="color: #e2e8f0; font-size: 1.1rem;">{metric['meaning']}</span>
-            </div>
+            st.markdown("**📝 의미**")
+            st.info(metric['meaning'])
 
-            <div style="margin-bottom: 15px;">
-                <span style="color: #a0aec0; font-size: 0.9rem;">쉽게 이해하기</span><br/>
-                <span style="color: #81c784; font-size: 1.1rem;">💡 {metric['intuition']}</span>
-            </div>
+        with col2:
+            st.markdown("**💡 쉽게 이해하기**")
+            st.success(metric['intuition'])
 
-            <div style="background: #0f3460; padding: 10px; border-radius: 8px;">
-                <span style="color: #64b5f6;">✓ 좋은 기준: {metric['good']}</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+            st.markdown("**✅ 좋은 기준**")
+            st.warning(metric['good'])
 
         # 해석 가이드
         st.markdown("#### 📊 결과 해석 가이드")
@@ -1281,13 +1273,13 @@ def show_ai_coach(db):
 
         for level, (threshold, desc) in interpret.items():
             if level == 'excellent':
-                color, icon = '#64b5f6', '🔥'
+                icon = '🔥'
             elif level == 'good':
-                color, icon = '#81c784', '👍'
+                icon = '👍'
             elif level == 'average':
-                color, icon = '#ffb74d', '📊'
+                icon = '📊'
             else:
-                color, icon = '#e57373', '⚠️'
+                icon = '⚠️'
 
             # K%는 낮을수록 좋음, BB%는 높을수록 좋음
             if metric_choice == 'K%':
@@ -1301,15 +1293,10 @@ def show_ai_coach(db):
                 except:
                     comparison = f"{threshold} 이상"
 
-            st.markdown(f"""
-            <div style="display: flex; align-items: center; padding: 10px; background: #16213e; margin: 5px 0; border-radius: 8px; border-left: 4px solid {color};">
-                <span style="font-size: 1.5rem; margin-right: 10px;">{icon}</span>
-                <div>
-                    <span style="color: {color}; font-weight: bold;">{comparison}</span><br/>
-                    <span style="color: #a0aec0;">{desc}</span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            # Streamlit expander로 깔끔하게 표시
+            with st.container():
+                st.markdown(f"{icon} **{comparison}**")
+                st.caption(desc)
 
     # === 탭2: 선수 분석 ===
     with tab2:
@@ -1342,12 +1329,8 @@ def show_ai_coach(db):
                 bb_rate = (stats.walks / stats.plate_appearances * 100) if stats.plate_appearances > 0 else 0
 
                 # 선수 프로필 카드
-                st.markdown(f"""
-                <div style="background: linear-gradient(135deg, #1e88e5 0%, #0f3460 100%); padding: 20px; border-radius: 15px; margin-bottom: 20px;">
-                    <h2 style="color: white; margin: 0;">{selected_player}</h2>
-                    <p style="color: #a0aec0; margin: 5px 0;">{stats.plate_appearances}타석 | {stats.at_bats}타수 | {stats.hits}안타 | {stats.home_runs}홈런</p>
-                </div>
-                """, unsafe_allow_html=True)
+                st.subheader(f"⚾ {selected_player}")
+                st.caption(f"{stats.plate_appearances}타석 | {stats.at_bats}타수 | {stats.hits}안타 | {stats.home_runs}홈런")
 
                 # 지표별 분석
                 col1, col2, col3, col4 = st.columns(4)
@@ -1366,19 +1349,11 @@ def show_ai_coach(db):
                 with col2:
                     display_stat_with_grade("wOBA", woba, "wOBA" if woba else None, ".3f")
                 with col3:
-                    st.markdown(f"""
-                    <div style="text-align: center; padding: 12px; background: #16213e; border-radius: 10px; margin: 5px 0; border: 1px solid #0f3460;">
-                        <div style="font-size: 0.85rem; color: #a0aec0;">삼진율</div>
-                        <div style="font-size: 1.8rem; font-weight: bold; color: {'#e57373' if k_rate > 25 else '#81c784' if k_rate < 15 else '#e2e8f0'};">{k_rate:.1f}%</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    k_delta = "높음" if k_rate > 25 else "낮음" if k_rate < 15 else None
+                    st.metric("삼진율", f"{k_rate:.1f}%", k_delta, delta_color="inverse" if k_rate > 25 else "normal")
                 with col4:
-                    st.markdown(f"""
-                    <div style="text-align: center; padding: 12px; background: #16213e; border-radius: 10px; margin: 5px 0; border: 1px solid #0f3460;">
-                        <div style="font-size: 0.85rem; color: #a0aec0;">볼넷율</div>
-                        <div style="font-size: 1.8rem; font-weight: bold; color: {'#81c784' if bb_rate > 10 else '#e57373' if bb_rate < 5 else '#e2e8f0'};">{bb_rate:.1f}%</div>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    bb_delta = "높음" if bb_rate > 10 else "낮음" if bb_rate < 5 else None
+                    st.metric("볼넷율", f"{bb_rate:.1f}%", bb_delta, delta_color="normal" if bb_rate > 10 else "inverse")
 
                 st.divider()
 
@@ -1424,21 +1399,13 @@ def show_ai_coach(db):
                 if strengths:
                     st.markdown("#### 💪 강점")
                     for s in strengths:
-                        st.markdown(f"""
-                        <div style="background: #1b4332; padding: 10px 15px; border-radius: 8px; margin: 5px 0; border-left: 4px solid #81c784;">
-                            <span style="color: #95d5b2;">✓ {s}</span>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        st.success(f"✓ {s}")
 
                 # 약점 표시
                 if weaknesses:
                     st.markdown("#### ⚠️ 개선 필요")
                     for w in weaknesses:
-                        st.markdown(f"""
-                        <div style="background: #3d1e1e; padding: 10px 15px; border-radius: 8px; margin: 5px 0; border-left: 4px solid #e57373;">
-                            <span style="color: #f8a0a0;">! {w}</span>
-                        </div>
-                        """, unsafe_allow_html=True)
+                        st.error(f"! {w}")
 
                 st.divider()
 
@@ -1452,23 +1419,11 @@ def show_ai_coach(db):
 
                 for prog_key in recommended_programs:
                     prog = TRAINING_PROGRAMS[prog_key]
-                    st.markdown(f"""
-                    <div style="background: #16213e; padding: 15px; border-radius: 10px; margin: 10px 0; border: 1px solid #1e88e5;">
-                        <h4 style="color: #64b5f6; margin: 0 0 10px 0;">🎯 {prog['name']}</h4>
-                        <p style="color: #a0aec0; margin-bottom: 10px;">목표: {prog['target']}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                    for drill_name, drill_desc in prog['drills']:
-                        st.markdown(f"""
-                        <div style="display: flex; padding: 8px 15px; background: #0f3460; margin: 3px 0; border-radius: 5px;">
-                            <span style="color: #64b5f6; margin-right: 10px;">•</span>
-                            <div>
-                                <span style="color: #e2e8f0; font-weight: bold;">{drill_name}</span><br/>
-                                <span style="color: #a0aec0; font-size: 0.85rem;">{drill_desc}</span>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                    with st.expander(f"🎯 {prog['name']}", expanded=True):
+                        st.caption(f"목표: {prog['target']}")
+                        for drill_name, drill_desc in prog['drills']:
+                            st.markdown(f"**• {drill_name}**")
+                            st.caption(f"  {drill_desc}")
 
     # === 탭3: 팀 분석 ===
     with tab3:
@@ -1605,12 +1560,7 @@ def show_ai_coach(db):
                     advice_items.append(("🎯", "리드오프 후보", f"{names} 선수는 선구안이 좋아 1~2번 타순에 적합합니다."))
 
                 for icon, title, content in advice_items:
-                    st.markdown(f"""
-                    <div style="background: #16213e; border-left: 4px solid #1e88e5; padding: 15px; margin: 10px 0; border-radius: 10px;">
-                        <strong style="color: #e2e8f0;">{icon} {title}</strong><br/>
-                        <span style="color: #a0aec0;">{content}</span>
-                    </div>
-                    """, unsafe_allow_html=True)
+                    st.info(f"{icon} **{title}**\n\n{content}")
 
     # === 탭4: 훈련 프로그램 ===
     with tab4:
@@ -1625,25 +1575,14 @@ def show_ai_coach(db):
 
         prog = TRAINING_PROGRAMS[program_choice]
 
-        st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #1e88e5 0%, #0f3460 100%); padding: 25px; border-radius: 15px; margin: 15px 0;">
-            <h2 style="color: white; margin: 0 0 10px 0;">🎯 {prog['name']}</h2>
-            <p style="color: #a0aec0; font-size: 1.1rem;">목표: {prog['target']}</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"## 🎯 {prog['name']}")
+        st.caption(f"목표: {prog['target']}")
 
         st.markdown("#### 훈련 메뉴")
 
         for i, (drill_name, drill_desc) in enumerate(prog['drills'], 1):
-            st.markdown(f"""
-            <div style="display: flex; padding: 15px; background: #16213e; margin: 8px 0; border-radius: 10px; border: 1px solid #0f3460;">
-                <div style="background: #1e88e5; color: white; width: 35px; height: 35px; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-right: 15px; font-weight: bold;">{i}</div>
-                <div style="flex: 1;">
-                    <span style="color: #e2e8f0; font-size: 1.1rem; font-weight: bold;">{drill_name}</span><br/>
-                    <span style="color: #a0aec0;">{drill_desc}</span>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.markdown(f"**{i}. {drill_name}**")
+            st.caption(drill_desc)
 
         # 추가 팁
         st.markdown("#### 💡 훈련 팁")
