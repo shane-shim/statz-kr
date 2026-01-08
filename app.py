@@ -868,31 +868,47 @@ def show_growth_report(db):
     player_id = player_options[selected_player]
     player_info = players[players['선수ID'] == player_id].iloc[0]
 
-    st.markdown(f"### {player_info['이름']} #{player_info['등번호']}")
-    st.divider()
+    # 타석 데이터 가져오기 - 선수명으로도 필터링 (ID 불일치 대비)
+    all_at_bats = load_at_bats(db)
+    player_name = player_info['이름']
 
-    # 타석 데이터 가져오기
-    at_bats = load_at_bats(db, player_id=player_id)
-
-    if len(at_bats) == 0:
-        st.info("아직 기록이 없습니다. 경기 기록을 추가해주세요!")
-        return
+    # 선수ID 또는 선수명으로 필터링
+    at_bats = all_at_bats[
+        (all_at_bats['선수ID'] == player_id) |
+        (all_at_bats['선수명'] == player_name)
+    ]
 
     # 경기별로 그룹화
-    games = at_bats['경기ID'].unique()
+    games = at_bats['경기ID'].unique() if len(at_bats) > 0 else []
+    total_games = load_games(db)
+
+    st.markdown(f"### {player_info['이름']} #{player_info['등번호']}")
+    st.caption(f"출전: {len(games)}경기 / 전체 {len(total_games)}경기")
+    st.divider()
+
+    if len(at_bats) == 0:
+        st.info("아직 기록이 없습니다. 경기에 출전하면 기록이 생성됩니다!")
+        return
+
+    # 현재 성적 표시 (1경기 이상이면 표시)
+    stats = calculate_player_batting_stats(at_bats)
+    calc = SabermetricsCalculator
+
+    st.subheader("📊 현재 성적")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        display_stat_with_grade("타율", calc.avg(stats), "AVG")
+    with col2:
+        display_stat_with_grade("출루율", calc.obp(stats), "OBP")
+    with col3:
+        display_stat_with_grade("장타율", calc.slg(stats), "SLG")
+    with col4:
+        display_stat_with_grade("OPS", calc.ops(stats), "OPS")
+
+    st.divider()
 
     if len(games) < 2:
-        st.info("트렌드 분석을 위해 최소 2경기 이상의 기록이 필요합니다.")
-        # 현재 성적만 표시
-        stats = calculate_player_batting_stats(at_bats)
-        calc = SabermetricsCalculator
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            display_stat_with_grade("타율", calc.avg(stats), "AVG")
-        with col2:
-            display_stat_with_grade("OPS", calc.ops(stats), "OPS")
-        with col3:
-            display_stat_with_grade("출루율", calc.obp(stats), "OBP")
+        st.info(f"📈 트렌드 분석을 위해 최소 2경기 이상 출전이 필요합니다. (현재 {len(games)}경기)")
         return
 
     # 경기별 성적 계산
