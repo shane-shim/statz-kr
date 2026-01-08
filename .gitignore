@@ -1,0 +1,17 @@
+# Credentials (보안)
+credentials.json
+*.json
+!package.json
+
+# Python
+__pycache__/
+*.py[cod]
+.env
+.venv/
+venv/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OS
+.DS_Store
