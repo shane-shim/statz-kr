@@ -248,12 +248,16 @@ def main():
 
     menu = st.sidebar.radio(
         "메뉴",
-        ["대시보드", "경기 기록", "선수 통계", "선수 관리", "경기 관리"],
+        ["대시보드", "성장 리포트", "팀 인사이트", "경기 기록", "선수 통계", "선수 관리", "경기 관리"],
         label_visibility="collapsed"
     )
 
     if menu == "대시보드":
         show_dashboard(db)
+    elif menu == "성장 리포트":
+        show_growth_report(db)
+    elif menu == "팀 인사이트":
+        show_team_insight(db)
     elif menu == "경기 기록":
         show_game_recording(db)
     elif menu == "선수 통계":
@@ -716,6 +720,439 @@ def show_player_management(db):
             )
         else:
             st.info("등록된 선수가 없습니다.")
+
+
+def show_growth_report(db):
+    """개인 성장 리포트 + AI 코칭"""
+    st.title("📈 성장 리포트")
+    st.caption("최근 경기 트렌드 분석 & AI 코칭 조언")
+
+    players = load_players(db)
+    if len(players) == 0:
+        st.warning("등록된 선수가 없습니다.")
+        return
+
+    # 선수 선택
+    player_options = {row['이름']: row['선수ID'] for _, row in players.iterrows()}
+    selected_player = st.selectbox("선수 선택", list(player_options.keys()))
+    player_id = player_options[selected_player]
+    player_info = players[players['선수ID'] == player_id].iloc[0]
+
+    st.markdown(f"### {player_info['이름']} #{player_info['등번호']}")
+    st.divider()
+
+    # 타석 데이터 가져오기
+    at_bats = load_at_bats(db, player_id=player_id)
+
+    if len(at_bats) == 0:
+        st.info("아직 기록이 없습니다. 경기 기록을 추가해주세요!")
+        return
+
+    # 경기별로 그룹화
+    games = at_bats['경기ID'].unique()
+
+    if len(games) < 2:
+        st.info("트렌드 분석을 위해 최소 2경기 이상의 기록이 필요합니다.")
+        # 현재 성적만 표시
+        stats = calculate_player_batting_stats(at_bats)
+        calc = SabermetricsCalculator
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            display_stat_with_grade("타율", calc.avg(stats), "AVG")
+        with col2:
+            display_stat_with_grade("OPS", calc.ops(stats), "OPS")
+        with col3:
+            display_stat_with_grade("출루율", calc.obp(stats), "OBP")
+        return
+
+    # 경기별 성적 계산
+    game_stats = []
+    for game_id in games:
+        game_abs = at_bats[at_bats['경기ID'] == game_id]
+        stats = calculate_player_batting_stats(game_abs)
+        calc = SabermetricsCalculator
+
+        game_stats.append({
+            '경기': game_id[-4:],  # 마지막 4자리만
+            '타수': stats.at_bats,
+            '안타': stats.hits,
+            '타율': calc.avg(stats) or 0,
+            'OPS': calc.ops(stats) or 0,
+            '삼진': stats.strikeouts,
+            '볼넷': stats.walks,
+            '삼진률': (stats.strikeouts / stats.plate_appearances * 100) if stats.plate_appearances > 0 else 0,
+            '볼넷률': (stats.walks / stats.plate_appearances * 100) if stats.plate_appearances > 0 else 0,
+        })
+
+    game_df = pd.DataFrame(game_stats)
+
+    # === 트렌드 분석 ===
+    st.subheader("📊 최근 경기 트렌드")
+
+    # 최근 5경기 vs 이전 경기 비교
+    recent_n = min(5, len(games))
+    recent_games = list(games)[-recent_n:]
+    older_games = list(games)[:-recent_n] if len(games) > recent_n else []
+
+    recent_abs = at_bats[at_bats['경기ID'].isin(recent_games)]
+    recent_stats = calculate_player_batting_stats(recent_abs)
+    recent_avg = SabermetricsCalculator.avg(recent_stats) or 0
+    recent_ops = SabermetricsCalculator.ops(recent_stats) or 0
+    recent_k_rate = (recent_stats.strikeouts / recent_stats.plate_appearances * 100) if recent_stats.plate_appearances > 0 else 0
+
+    if older_games:
+        older_abs = at_bats[at_bats['경기ID'].isin(older_games)]
+        older_stats = calculate_player_batting_stats(older_abs)
+        older_avg = SabermetricsCalculator.avg(older_stats) or 0
+        older_ops = SabermetricsCalculator.ops(older_stats) or 0
+        older_k_rate = (older_stats.strikeouts / older_stats.plate_appearances * 100) if older_stats.plate_appearances > 0 else 0
+
+        avg_diff = recent_avg - older_avg
+        ops_diff = recent_ops - older_ops
+        k_diff = recent_k_rate - older_k_rate
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            delta_color = "normal" if avg_diff >= 0 else "inverse"
+            st.metric(f"타율 (최근 {recent_n}경기)", f"{recent_avg:.3f}",
+                     f"{avg_diff:+.3f}", delta_color=delta_color)
+        with col2:
+            delta_color = "normal" if ops_diff >= 0 else "inverse"
+            st.metric(f"OPS (최근 {recent_n}경기)", f"{recent_ops:.3f}",
+                     f"{ops_diff:+.3f}", delta_color=delta_color)
+        with col3:
+            delta_color = "inverse" if k_diff >= 0 else "normal"  # 삼진률은 낮을수록 좋음
+            st.metric(f"삼진률 (최근 {recent_n}경기)", f"{recent_k_rate:.1f}%",
+                     f"{k_diff:+.1f}%", delta_color=delta_color)
+    else:
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric(f"타율 (최근 {recent_n}경기)", f"{recent_avg:.3f}")
+        with col2:
+            st.metric(f"OPS (최근 {recent_n}경기)", f"{recent_ops:.3f}")
+        with col3:
+            st.metric(f"삼진률 (최근 {recent_n}경기)", f"{recent_k_rate:.1f}%")
+
+    # 그래프
+    if len(game_df) >= 2:
+        import plotly.graph_objects as go
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=list(range(1, len(game_df)+1)), y=game_df['타율'],
+                                  mode='lines+markers', name='타율', line=dict(color='#1e88e5', width=3)))
+        fig.update_layout(
+            title="경기별 타율 변화",
+            xaxis_title="경기",
+            yaxis_title="타율",
+            yaxis=dict(range=[0, max(0.5, game_df['타율'].max() + 0.1)]),
+            height=300
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.divider()
+
+    # === AI 코칭 조언 ===
+    st.subheader("🤖 AI 코칭 조언")
+
+    advice_list = []
+
+    # 전체 통계
+    total_stats = calculate_player_batting_stats(at_bats)
+    calc = SabermetricsCalculator
+
+    total_avg = calc.avg(total_stats) or 0
+    total_ops = calc.ops(total_stats) or 0
+    total_k_rate = (total_stats.strikeouts / total_stats.plate_appearances * 100) if total_stats.plate_appearances > 0 else 0
+    total_bb_rate = (total_stats.walks / total_stats.plate_appearances * 100) if total_stats.plate_appearances > 0 else 0
+    total_iso = calc.iso(total_stats) or 0
+
+    # 조언 생성
+    # 1. 타율 기반 조언
+    if total_avg >= 0.350:
+        advice_list.append(("🔥", "훌륭한 타율!", f"타율 {total_avg:.3f}로 리그 최상위권입니다. 현재 컨디션을 유지하세요!"))
+    elif total_avg >= 0.300:
+        advice_list.append(("👍", "좋은 타율", f"타율 {total_avg:.3f}로 준수합니다. 꾸준함을 유지하세요."))
+    elif total_avg >= 0.250:
+        advice_list.append(("📊", "평균 타율", f"타율 {total_avg:.3f}입니다. 스윙 타이밍 점검을 권장합니다."))
+    else:
+        advice_list.append(("⚠️", "타율 개선 필요", f"타율 {total_avg:.3f}입니다. 배팅 폼 점검과 티배팅 연습을 추천합니다."))
+
+    # 2. 삼진률 기반 조언
+    if total_k_rate > 25:
+        advice_list.append(("👁️", "선구안 개선 필요", f"삼진률 {total_k_rate:.1f}%가 높습니다. 초구 스트라이크 적극 공략과 2스트라이크 후 컨택 위주 스윙을 연습하세요."))
+    elif total_k_rate < 10:
+        advice_list.append(("✨", "뛰어난 컨택 능력", f"삼진률 {total_k_rate:.1f}%로 매우 낮습니다. 컨택 능력이 우수합니다!"))
+
+    # 3. 볼넷률 기반 조언
+    if total_bb_rate < 5:
+        advice_list.append(("🎯", "출루 기회 활용", f"볼넷률 {total_bb_rate:.1f}%가 낮습니다. 볼 선구를 늘려 출루 기회를 높이세요."))
+    elif total_bb_rate > 12:
+        advice_list.append(("👀", "훌륭한 선구안", f"볼넷률 {total_bb_rate:.1f}%로 높습니다. 뛰어난 선구안을 보유하고 있습니다!"))
+
+    # 4. 장타력 기반 조언
+    if total_iso < 0.100 and total_stats.at_bats >= 10:
+        advice_list.append(("💪", "장타력 강화 필요", f"ISO(순장타율) {total_iso:.3f}입니다. 장타를 늘리려면 하체 힘과 팔로우스루를 점검하세요."))
+    elif total_iso > 0.200:
+        advice_list.append(("🚀", "강력한 장타력", f"ISO {total_iso:.3f}로 뛰어난 장타력을 보유하고 있습니다!"))
+
+    # 5. 최근 트렌드 기반 조언
+    if older_games and avg_diff < -0.050:
+        advice_list.append(("📉", "최근 슬럼프 징후", f"최근 {recent_n}경기 타율이 {abs(avg_diff):.3f} 하락했습니다. 컨디션 관리와 기본기 점검이 필요합니다."))
+    elif older_games and avg_diff > 0.050:
+        advice_list.append(("📈", "상승세!", f"최근 {recent_n}경기 타율이 {avg_diff:.3f} 상승했습니다. 좋은 컨디션을 유지하세요!"))
+
+    # 조언 표시
+    for icon, title, content in advice_list:
+        st.markdown(f"""
+        <div style="background: #f8f9fa; border-left: 4px solid #1e88e5; padding: 15px; margin: 10px 0; border-radius: 5px;">
+            <strong>{icon} {title}</strong><br/>
+            <span style="color: #555;">{content}</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    if not advice_list:
+        st.info("충분한 데이터가 쌓이면 맞춤형 조언을 제공합니다!")
+
+
+def show_team_insight(db):
+    """팀 인사이트"""
+    st.title("👥 팀 인사이트")
+    st.caption("팀 분석, 최적 타순 추천, 팀원 비교")
+
+    players = load_players(db)
+    at_bats = load_at_bats(db)
+    games = load_games(db)
+
+    if len(players) == 0:
+        st.warning("등록된 선수가 없습니다.")
+        return
+
+    if len(at_bats) == 0:
+        st.warning("기록된 경기가 없습니다.")
+        return
+
+    tab1, tab2, tab3 = st.tabs(["팀원 비교", "최적 타순", "팀 리더보드"])
+
+    with tab1:
+        st.subheader("팀원 성적 비교")
+        show_grade_legend()
+
+        # 모든 선수 성적 계산
+        player_stats_list = []
+        for _, player in players.iterrows():
+            player_abs = at_bats[at_bats['선수ID'] == player['선수ID']]
+            if len(player_abs) > 0:
+                stats = calculate_player_batting_stats(player_abs)
+                calc = SabermetricsCalculator
+                if stats.at_bats >= 3:  # 최소 3타수
+                    avg = calc.avg(stats) or 0
+                    ops = calc.ops(stats) or 0
+                    obp = calc.obp(stats) or 0
+                    slg = calc.slg(stats) or 0
+
+                    player_stats_list.append({
+                        '선수': player['이름'],
+                        '타수': stats.at_bats,
+                        '안타': stats.hits,
+                        '타율': avg,
+                        '출루율': obp,
+                        '장타율': slg,
+                        'OPS': ops,
+                        '홈런': stats.home_runs,
+                        '타점': stats.rbis,
+                        '삼진': stats.strikeouts,
+                        '볼넷': stats.walks,
+                    })
+
+        if player_stats_list:
+            stats_df = pd.DataFrame(player_stats_list)
+            stats_df = stats_df.sort_values('OPS', ascending=False)
+
+            # 등급 색상 적용
+            def color_grade(val, stat_name):
+                if pd.isna(val):
+                    return ''
+                grade, color = get_grade(stat_name, val)
+                return f'color: {color}; font-weight: bold'
+
+            styled_df = stats_df.copy()
+            styled_df['타율'] = styled_df['타율'].apply(lambda x: f"{x:.3f}")
+            styled_df['출루율'] = styled_df['출루율'].apply(lambda x: f"{x:.3f}")
+            styled_df['장타율'] = styled_df['장타율'].apply(lambda x: f"{x:.3f}")
+            styled_df['OPS'] = styled_df['OPS'].apply(lambda x: f"{x:.3f}")
+
+            st.dataframe(styled_df, hide_index=True, use_container_width=True)
+
+            # 레이더 차트로 비교
+            if len(player_stats_list) >= 2:
+                st.subheader("선수 비교 차트")
+                compare_players = st.multiselect(
+                    "비교할 선수 선택 (2-4명)",
+                    [p['선수'] for p in player_stats_list],
+                    default=[player_stats_list[0]['선수'], player_stats_list[1]['선수']] if len(player_stats_list) >= 2 else []
+                )
+
+                if len(compare_players) >= 2:
+                    fig = go.Figure()
+
+                    categories = ['타율', '출루율', '장타율']
+
+                    for player_name in compare_players:
+                        player_data = next((p for p in player_stats_list if p['선수'] == player_name), None)
+                        if player_data:
+                            # 정규화 (0-1 스케일)
+                            values = [
+                                min(player_data['타율'] / 0.4, 1),
+                                min(player_data['출루율'] / 0.5, 1),
+                                min(player_data['장타율'] / 0.6, 1),
+                            ]
+                            values.append(values[0])  # 닫기
+
+                            fig.add_trace(go.Scatterpolar(
+                                r=values,
+                                theta=categories + [categories[0]],
+                                name=player_name,
+                                fill='toself',
+                                opacity=0.6
+                            ))
+
+                    fig.update_layout(
+                        polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
+                        showlegend=True,
+                        height=400
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("충분한 타석 기록이 있는 선수가 없습니다.")
+
+    with tab2:
+        st.subheader("🎯 최적 타순 추천")
+        st.caption("OPS 기반 타순 최적화")
+
+        if player_stats_list:
+            # 타순 추천 로직
+            sorted_players = sorted(player_stats_list, key=lambda x: x['OPS'], reverse=True)
+
+            st.markdown("""
+            **타순 구성 원칙:**
+            - 1번: 출루율 높은 선수
+            - 2번: 컨택 좋고 출루율 높은 선수
+            - 3번: 가장 좋은 타자 (OPS 최고)
+            - 4번: 장타력 + 타점 능력
+            - 5번 이하: OPS 순
+            """)
+
+            st.divider()
+
+            # 출루율 기준 정렬 (1,2번용)
+            by_obp = sorted(player_stats_list, key=lambda x: x['출루율'], reverse=True)
+            # 장타율 기준 정렬 (4번용)
+            by_slg = sorted(player_stats_list, key=lambda x: x['장타율'], reverse=True)
+
+            recommended_order = []
+            used = set()
+
+            # 1번: 출루율 최고
+            if by_obp:
+                p = by_obp[0]
+                recommended_order.append((1, p['선수'], f"출루율 {p['출루율']:.3f}"))
+                used.add(p['선수'])
+
+            # 2번: 출루율 2위
+            for p in by_obp:
+                if p['선수'] not in used:
+                    recommended_order.append((2, p['선수'], f"출루율 {p['출루율']:.3f}"))
+                    used.add(p['선수'])
+                    break
+
+            # 3번: OPS 최고 (남은 선수 중)
+            for p in sorted_players:
+                if p['선수'] not in used:
+                    recommended_order.append((3, p['선수'], f"OPS {p['OPS']:.3f} (팀 내 최고)"))
+                    used.add(p['선수'])
+                    break
+
+            # 4번: 장타율 최고 (남은 선수 중)
+            for p in by_slg:
+                if p['선수'] not in used:
+                    recommended_order.append((4, p['선수'], f"장타율 {p['장타율']:.3f}"))
+                    used.add(p['선수'])
+                    break
+
+            # 5번 이하: OPS 순
+            order_num = 5
+            for p in sorted_players:
+                if p['선수'] not in used and order_num <= 9:
+                    recommended_order.append((order_num, p['선수'], f"OPS {p['OPS']:.3f}"))
+                    used.add(p['선수'])
+                    order_num += 1
+
+            # 표시
+            for order, name, reason in recommended_order:
+                st.markdown(f"""
+                <div style="display: flex; align-items: center; padding: 10px; background: {'#e3f2fd' if order <= 4 else '#f5f5f5'}; margin: 5px 0; border-radius: 8px;">
+                    <div style="font-size: 1.5rem; font-weight: bold; width: 40px; color: #1e88e5;">{order}</div>
+                    <div style="flex: 1;">
+                        <strong>{name}</strong><br/>
+                        <span style="color: #666; font-size: 0.85rem;">{reason}</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("충분한 기록이 있는 선수가 필요합니다.")
+
+    with tab3:
+        st.subheader("🏆 팀 리더보드")
+
+        if player_stats_list:
+            col1, col2 = st.columns(2)
+
+            with col1:
+                st.markdown("**타율 TOP 3**")
+                top_avg = sorted(player_stats_list, key=lambda x: x['타율'], reverse=True)[:3]
+                for i, p in enumerate(top_avg, 1):
+                    medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉"
+                    st.markdown(f"{medal} **{p['선수']}** - {p['타율']:.3f}")
+
+                st.markdown("**홈런 TOP 3**")
+                top_hr = sorted(player_stats_list, key=lambda x: x['홈런'], reverse=True)[:3]
+                for i, p in enumerate(top_hr, 1):
+                    medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉"
+                    st.markdown(f"{medal} **{p['선수']}** - {p['홈런']}개")
+
+            with col2:
+                st.markdown("**OPS TOP 3**")
+                top_ops = sorted(player_stats_list, key=lambda x: x['OPS'], reverse=True)[:3]
+                for i, p in enumerate(top_ops, 1):
+                    medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉"
+                    st.markdown(f"{medal} **{p['선수']}** - {p['OPS']:.3f}")
+
+                st.markdown("**타점 TOP 3**")
+                top_rbi = sorted(player_stats_list, key=lambda x: x['타점'], reverse=True)[:3]
+                for i, p in enumerate(top_rbi, 1):
+                    medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉"
+                    st.markdown(f"{medal} **{p['선수']}** - {p['타점']}타점")
+
+            # 팀 평균
+            st.divider()
+            st.subheader("📊 팀 평균")
+
+            team_avg = sum(p['타율'] for p in player_stats_list) / len(player_stats_list)
+            team_ops = sum(p['OPS'] for p in player_stats_list) / len(player_stats_list)
+            team_hr = sum(p['홈런'] for p in player_stats_list)
+            team_rbi = sum(p['타점'] for p in player_stats_list)
+
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                display_stat_with_grade("팀 평균 타율", team_avg, "AVG")
+            with col2:
+                display_stat_with_grade("팀 평균 OPS", team_ops, "OPS")
+            with col3:
+                st.metric("팀 총 홈런", f"{team_hr}개")
+            with col4:
+                st.metric("팀 총 타점", f"{team_rbi}점")
+        else:
+            st.info("충분한 기록이 있는 선수가 필요합니다.")
 
 
 def show_game_management(db):
