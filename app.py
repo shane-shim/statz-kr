@@ -44,8 +44,84 @@ st.markdown("""
         font-size: 3rem;
         font-weight: bold;
     }
+    .grade-excellent { color: #1e88e5; font-weight: bold; }
+    .grade-good { color: #43a047; font-weight: bold; }
+    .grade-average { color: #ff9800; font-weight: bold; }
+    .grade-below { color: #e53935; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
+
+
+# === 등급 기준 (사회인야구 기준) ===
+GRADE_CRITERIA = {
+    'AVG': [(0.350, '훌륭함', '#1e88e5'), (0.300, '좋음', '#43a047'), (0.250, '보통', '#ff9800'), (0.200, '개선필요', '#e53935'), (0, '부진', '#b71c1c')],
+    'OBP': [(0.420, '훌륭함', '#1e88e5'), (0.360, '좋음', '#43a047'), (0.300, '보통', '#ff9800'), (0.250, '개선필요', '#e53935'), (0, '부진', '#b71c1c')],
+    'SLG': [(0.550, '훌륭함', '#1e88e5'), (0.450, '좋음', '#43a047'), (0.350, '보통', '#ff9800'), (0.250, '개선필요', '#e53935'), (0, '부진', '#b71c1c')],
+    'OPS': [(0.950, '훌륭함', '#1e88e5'), (0.800, '좋음', '#43a047'), (0.650, '보통', '#ff9800'), (0.550, '개선필요', '#e53935'), (0, '부진', '#b71c1c')],
+    'wOBA': [(0.400, '훌륭함', '#1e88e5'), (0.340, '좋음', '#43a047'), (0.300, '보통', '#ff9800'), (0.250, '개선필요', '#e53935'), (0, '부진', '#b71c1c')],
+    'ERA': [(2.50, '훌륭함', '#1e88e5'), (3.50, '좋음', '#43a047'), (4.50, '보통', '#ff9800'), (5.50, '개선필요', '#e53935'), (99, '부진', '#b71c1c')],
+    'WHIP': [(1.00, '훌륭함', '#1e88e5'), (1.25, '좋음', '#43a047'), (1.50, '보통', '#ff9800'), (1.75, '개선필요', '#e53935'), (99, '부진', '#b71c1c')],
+}
+
+
+def get_grade(stat_name: str, value: float) -> tuple:
+    """지표값에 대한 등급과 색상 반환"""
+    if value is None:
+        return ('-', '#666666')
+
+    criteria = GRADE_CRITERIA.get(stat_name, [])
+
+    # ERA, WHIP는 낮을수록 좋음
+    if stat_name in ['ERA', 'WHIP']:
+        for threshold, grade, color in criteria:
+            if value <= threshold:
+                return (grade, color)
+    else:
+        for threshold, grade, color in criteria:
+            if value >= threshold:
+                return (grade, color)
+
+    return ('부진', '#b71c1c')
+
+
+def display_stat_with_grade(label: str, value, stat_name: str = None, format_str: str = ".3f"):
+    """등급과 함께 지표 표시"""
+    if value is None:
+        st.markdown(f"""
+        <div style="text-align: center; padding: 10px; background: #f5f5f5; border-radius: 8px; margin: 5px 0;">
+            <div style="font-size: 0.85rem; color: #666;">{label}</div>
+            <div style="font-size: 1.8rem; font-weight: bold;">-</div>
+        </div>
+        """, unsafe_allow_html=True)
+        return
+
+    if stat_name:
+        grade, color = get_grade(stat_name, value)
+        grade_html = f'<span style="color: {color}; font-size: 0.75rem;">({grade})</span>'
+    else:
+        grade_html = ''
+
+    formatted_value = f"{value:{format_str}}" if isinstance(value, float) else str(value)
+
+    st.markdown(f"""
+    <div style="text-align: center; padding: 10px; background: #f5f5f5; border-radius: 8px; margin: 5px 0;">
+        <div style="font-size: 0.85rem; color: #666;">{label}</div>
+        <div style="font-size: 1.8rem; font-weight: bold;">{formatted_value}</div>
+        {grade_html}
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def show_grade_legend():
+    """등급 범례 표시"""
+    st.markdown("""
+    <div style="display: flex; gap: 15px; justify-content: center; padding: 10px; background: #fafafa; border-radius: 8px; margin: 10px 0;">
+        <span><span style="color: #1e88e5;">●</span> 훌륭함</span>
+        <span><span style="color: #43a047;">●</span> 좋음</span>
+        <span><span style="color: #ff9800;">●</span> 보통</span>
+        <span><span style="color: #e53935;">●</span> 개선필요</span>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 def get_db():
@@ -456,18 +532,19 @@ def show_player_stats(db):
 
             # 주요 지표
             st.subheader("시즌 기록")
+            show_grade_legend()
 
             col1, col2, col3, col4, col5 = st.columns(5)
             with col1:
-                st.metric("타율", format_avg(calc.avg(stats)))
+                display_stat_with_grade("타율", calc.avg(stats), "AVG")
             with col2:
-                st.metric("출루율", format_avg(calc.obp(stats)))
+                display_stat_with_grade("출루율", calc.obp(stats), "OBP")
             with col3:
-                st.metric("장타율", format_avg(calc.slg(stats)))
+                display_stat_with_grade("장타율", calc.slg(stats), "SLG")
             with col4:
-                st.metric("OPS", format_avg(calc.ops(stats)))
+                display_stat_with_grade("OPS", calc.ops(stats), "OPS")
             with col5:
-                st.metric("wOBA", format_avg(calc.woba(stats)))
+                display_stat_with_grade("wOBA", calc.woba(stats), "wOBA")
 
             st.divider()
 
@@ -524,18 +601,19 @@ def show_player_stats(db):
 
             # 주요 지표
             st.subheader("시즌 기록")
+            show_grade_legend()
 
             col1, col2, col3, col4, col5 = st.columns(5)
             with col1:
-                st.metric("ERA", format_era(calc.era(stats)))
+                display_stat_with_grade("ERA", calc.era(stats), "ERA", ".2f")
             with col2:
-                st.metric("WHIP", f"{calc.whip(stats):.2f}" if calc.whip(stats) else "-")
+                display_stat_with_grade("WHIP", calc.whip(stats), "WHIP", ".2f")
             with col3:
-                st.metric("K/9", f"{calc.k_per_9(stats):.1f}" if calc.k_per_9(stats) else "-")
+                display_stat_with_grade("K/9", calc.k_per_9(stats), None, ".1f")
             with col4:
-                st.metric("BB/9", f"{calc.bb_per_9(stats):.1f}" if calc.bb_per_9(stats) else "-")
+                display_stat_with_grade("BB/9", calc.bb_per_9(stats), None, ".1f")
             with col5:
-                st.metric("FIP", format_era(calc.fip(stats)))
+                display_stat_with_grade("FIP", calc.fip(stats), "ERA", ".2f")
 
             st.divider()
 
