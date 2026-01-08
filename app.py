@@ -23,32 +23,160 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 스타일
+# 스타일 - 모바일 반응형 + 가독성 개선
 st.markdown("""
 <style>
-    .stat-card {
-        background-color: #f0f2f6;
+    /* 전체 배경 및 텍스트 */
+    .stApp {
+        background-color: #1a1a2e;
+    }
+
+    /* 사이드바 스타일 */
+    [data-testid="stSidebar"] {
+        background-color: #16213e;
+    }
+    [data-testid="stSidebar"] * {
+        color: #e8e8e8 !important;
+    }
+
+    /* 메인 텍스트 색상 */
+    .stMarkdown, .stText, p, span, label {
+        color: #e8e8e8 !important;
+    }
+    h1, h2, h3 {
+        color: #ffffff !important;
+    }
+
+    /* 메트릭 카드 스타일 */
+    [data-testid="stMetric"] {
+        background-color: #16213e;
+        padding: 15px;
         border-radius: 10px;
-        padding: 20px;
+        border: 1px solid #0f3460;
+    }
+    [data-testid="stMetricLabel"] {
+        color: #a8a8a8 !important;
+    }
+    [data-testid="stMetricValue"] {
+        color: #ffffff !important;
+        font-size: 1.5rem !important;
+    }
+    [data-testid="stMetricDelta"] {
+        font-size: 0.9rem !important;
+    }
+
+    /* 커스텀 스탯 카드 */
+    .stat-card {
+        background-color: #16213e;
+        border-radius: 10px;
+        padding: 15px;
         text-align: center;
+        border: 1px solid #0f3460;
     }
     .stat-value {
-        font-size: 2.5rem;
+        font-size: 1.8rem;
         font-weight: bold;
-        color: #1f77b4;
+        color: #ffffff;
     }
     .stat-label {
-        font-size: 0.9rem;
-        color: #666;
+        font-size: 0.85rem;
+        color: #a8a8a8;
     }
-    .big-stat {
-        font-size: 3rem;
-        font-weight: bold;
+
+    /* 등급 색상 (밝게) */
+    .grade-excellent { color: #64b5f6 !important; font-weight: bold; }
+    .grade-good { color: #81c784 !important; font-weight: bold; }
+    .grade-average { color: #ffb74d !important; font-weight: bold; }
+    .grade-below { color: #e57373 !important; font-weight: bold; }
+
+    /* 테이블 스타일 */
+    [data-testid="stDataFrame"] {
+        background-color: #16213e;
     }
-    .grade-excellent { color: #1e88e5; font-weight: bold; }
-    .grade-good { color: #43a047; font-weight: bold; }
-    .grade-average { color: #ff9800; font-weight: bold; }
-    .grade-below { color: #e53935; font-weight: bold; }
+    .dataframe {
+        color: #e8e8e8 !important;
+    }
+
+    /* 탭 스타일 */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background-color: #16213e;
+        color: #e8e8e8;
+        border-radius: 8px;
+        padding: 10px 20px;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #0f3460;
+    }
+
+    /* 버튼 스타일 */
+    .stButton > button {
+        background-color: #0f3460;
+        color: #ffffff;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 20px;
+    }
+    .stButton > button:hover {
+        background-color: #1a4a7a;
+    }
+
+    /* 입력 필드 스타일 */
+    .stSelectbox > div, .stNumberInput > div, .stTextInput > div {
+        background-color: #16213e;
+    }
+
+    /* 정보/경고 메시지 */
+    .stAlert {
+        background-color: #16213e;
+        color: #e8e8e8;
+    }
+
+    /* 구분선 */
+    hr {
+        border-color: #0f3460;
+    }
+
+    /* 모바일 반응형 */
+    @media (max-width: 768px) {
+        .stat-value {
+            font-size: 1.4rem !important;
+        }
+        [data-testid="stMetricValue"] {
+            font-size: 1.2rem !important;
+        }
+        .stTabs [data-baseweb="tab"] {
+            padding: 8px 12px;
+            font-size: 0.85rem;
+        }
+        [data-testid="stMetric"] {
+            padding: 10px;
+        }
+        h1 {
+            font-size: 1.5rem !important;
+        }
+        h2 {
+            font-size: 1.2rem !important;
+        }
+        h3 {
+            font-size: 1rem !important;
+        }
+    }
+
+    /* 스크롤바 스타일 */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+        background: #1a1a2e;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: #0f3460;
+        border-radius: 4px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -86,41 +214,41 @@ def get_grade(stat_name: str, value: float) -> tuple:
 
 
 def display_stat_with_grade(label: str, value, stat_name: str = None, format_str: str = ".3f"):
-    """등급과 함께 지표 표시"""
+    """등급과 함께 지표 표시 (다크 모드)"""
     if value is None:
         st.markdown(f"""
-        <div style="text-align: center; padding: 10px; background: #f5f5f5; border-radius: 8px; margin: 5px 0;">
-            <div style="font-size: 0.85rem; color: #666;">{label}</div>
-            <div style="font-size: 1.8rem; font-weight: bold;">-</div>
+        <div style="text-align: center; padding: 12px; background: #16213e; border-radius: 10px; margin: 5px 0; border: 1px solid #0f3460;">
+            <div style="font-size: 0.85rem; color: #a0aec0;">{label}</div>
+            <div style="font-size: 1.8rem; font-weight: bold; color: #e2e8f0;">-</div>
         </div>
         """, unsafe_allow_html=True)
         return
 
     if stat_name:
         grade, color = get_grade(stat_name, value)
-        grade_html = f'<span style="color: {color}; font-size: 0.75rem;">({grade})</span>'
+        grade_html = f'<span style="color: {color}; font-size: 0.75rem; font-weight: 600;">({grade})</span>'
     else:
         grade_html = ''
 
     formatted_value = f"{value:{format_str}}" if isinstance(value, float) else str(value)
 
     st.markdown(f"""
-    <div style="text-align: center; padding: 10px; background: #f5f5f5; border-radius: 8px; margin: 5px 0;">
-        <div style="font-size: 0.85rem; color: #666;">{label}</div>
-        <div style="font-size: 1.8rem; font-weight: bold;">{formatted_value}</div>
+    <div style="text-align: center; padding: 12px; background: #16213e; border-radius: 10px; margin: 5px 0; border: 1px solid #0f3460;">
+        <div style="font-size: 0.85rem; color: #a0aec0;">{label}</div>
+        <div style="font-size: 1.8rem; font-weight: bold; color: #e2e8f0;">{formatted_value}</div>
         {grade_html}
     </div>
     """, unsafe_allow_html=True)
 
 
 def show_grade_legend():
-    """등급 범례 표시"""
+    """등급 범례 표시 (다크 모드)"""
     st.markdown("""
-    <div style="display: flex; gap: 15px; justify-content: center; padding: 10px; background: #fafafa; border-radius: 8px; margin: 10px 0;">
-        <span><span style="color: #1e88e5;">●</span> 훌륭함</span>
-        <span><span style="color: #43a047;">●</span> 좋음</span>
-        <span><span style="color: #ff9800;">●</span> 보통</span>
-        <span><span style="color: #e53935;">●</span> 개선필요</span>
+    <div style="display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; padding: 12px; background: #16213e; border-radius: 10px; margin: 10px 0; border: 1px solid #0f3460;">
+        <span style="color: #e2e8f0;"><span style="color: #1e88e5;">●</span> 훌륭함</span>
+        <span style="color: #e2e8f0;"><span style="color: #43a047;">●</span> 좋음</span>
+        <span style="color: #e2e8f0;"><span style="color: #ff9800;">●</span> 보통</span>
+        <span style="color: #e2e8f0;"><span style="color: #e53935;">●</span> 개선필요</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -904,9 +1032,9 @@ def show_growth_report(db):
     # 조언 표시
     for icon, title, content in advice_list:
         st.markdown(f"""
-        <div style="background: #f8f9fa; border-left: 4px solid #1e88e5; padding: 15px; margin: 10px 0; border-radius: 5px;">
-            <strong>{icon} {title}</strong><br/>
-            <span style="color: #555;">{content}</span>
+        <div style="background: #16213e; border-left: 4px solid #1e88e5; padding: 15px; margin: 10px 0; border-radius: 10px; border: 1px solid #0f3460;">
+            <strong style="color: #e2e8f0;">{icon} {title}</strong><br/>
+            <span style="color: #a0aec0;">{content}</span>
         </div>
         """, unsafe_allow_html=True)
 
@@ -1090,11 +1218,11 @@ def show_team_insight(db):
             # 표시
             for order, name, reason in recommended_order:
                 st.markdown(f"""
-                <div style="display: flex; align-items: center; padding: 10px; background: {'#e3f2fd' if order <= 4 else '#f5f5f5'}; margin: 5px 0; border-radius: 8px;">
-                    <div style="font-size: 1.5rem; font-weight: bold; width: 40px; color: #1e88e5;">{order}</div>
+                <div style="display: flex; align-items: center; padding: 12px; background: {'#0f3460' if order <= 4 else '#16213e'}; margin: 5px 0; border-radius: 10px; border: 1px solid #0f3460;">
+                    <div style="font-size: 1.5rem; font-weight: bold; width: 40px; color: #64b5f6;">{order}</div>
                     <div style="flex: 1;">
-                        <strong>{name}</strong><br/>
-                        <span style="color: #666; font-size: 0.85rem;">{reason}</span>
+                        <strong style="color: #e2e8f0;">{name}</strong><br/>
+                        <span style="color: #a0aec0; font-size: 0.85rem;">{reason}</span>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
@@ -1199,12 +1327,12 @@ def show_game_management(db):
         games = load_games(db)
 
         if len(games) > 0:
-            # 결과별 색상
+            # 결과별 색상 (다크 모드)
             def highlight_result(val):
                 if val == '승':
-                    return 'background-color: #d4edda'
+                    return 'background-color: #1b4332; color: #95d5b2'
                 elif val == '패':
-                    return 'background-color: #f8d7da'
+                    return 'background-color: #3d1e1e; color: #f8a0a0'
                 return ''
 
             styled_df = games[['날짜', '상대팀', '홈/원정', '우리점수', '상대점수', '결과', '구장']].style.applymap(
