@@ -23,6 +23,19 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# OG 태그 설정 (카카오톡 공유용)
+st.markdown("""
+<head>
+    <meta property="og:title" content="Black Monkeys - 세이버메트릭스">
+    <meta property="og:description" content="Black Monkeys 사회인야구팀 전용 세이버메트릭스 분석 시스템">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://savermetrics.streamlit.app/">
+    <meta name="twitter:card" content="summary">
+    <meta name="twitter:title" content="Black Monkeys - 세이버메트릭스">
+    <meta name="twitter:description" content="Black Monkeys 사회인야구팀 전용 세이버메트릭스 분석 시스템">
+</head>
+""", unsafe_allow_html=True)
+
 # 스타일 - 모바일 반응형 + 가독성 개선
 st.markdown("""
 <style>
