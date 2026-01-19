@@ -1,6 +1,7 @@
 """
 Google Sheets 데이터베이스 모듈
-선수, 경기, 타석 기록을 Google Sheets에 저장/조회
+선수, 경기, 타석, 참석 기록을 Google Sheets에 저장/조회
+Black Monkeys 전용 v2.0
 """
 
 import json
