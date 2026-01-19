@@ -556,18 +556,21 @@ def show_attendance(db):
 
         st.markdown("### 선수별 참석 체크")
 
-        # 선수 목록과 체크박스
+        # 선수 목록과 체크박스 (중복 제거)
         attendance_records = []
         cols = st.columns(3)
 
-        for idx, (_, player) in enumerate(players.iterrows()):
+        # 중복 선수 제거
+        unique_players = players.drop_duplicates(subset=['선수ID']).reset_index(drop=True)
+
+        for idx, (_, player) in enumerate(unique_players.iterrows()):
             col_idx = idx % 3
             with cols[col_idx]:
                 default_val = st.session_state.get('attendance_all', True)
                 attended = st.checkbox(
                     f"{player['이름']}",
                     value=default_val,
-                    key=f"att_{player['선수ID']}"
+                    key=f"att_{idx}_{player['선수ID']}"
                 )
                 attendance_records.append({
                     'game_id': game_id,
