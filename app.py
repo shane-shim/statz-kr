@@ -1,5 +1,5 @@
 """
-미라클 동산 전용 세이버메트릭스
+Black Monkeys 전용 세이버메트릭스
 Streamlit 웹 애플리케이션
 """
 
@@ -17,8 +17,8 @@ import time
 
 # 페이지 설정
 st.set_page_config(
-    page_title="미라클 동산",
-    page_icon="⚾",
+    page_title="Black Monkeys",
+    page_icon="🐵",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -370,18 +370,20 @@ def main():
     db = get_db()
 
     # 사이드바 - 네비게이션
-    st.sidebar.title("⚾ 미라클 동산")
+    st.sidebar.title("🐵 Black Monkeys")
     st.sidebar.markdown("전용 세이버메트릭스")
     st.sidebar.divider()
 
     menu = st.sidebar.radio(
         "메뉴",
-        ["대시보드", "🧠 AI 코치", "성장 리포트", "팀 인사이트", "경기 기록", "선수 통계", "선수 관리", "경기 관리"],
+        ["대시보드", "📋 참석 관리", "🧠 AI 코치", "성장 리포트", "팀 인사이트", "경기 기록", "선수 통계", "선수 관리", "경기 관리"],
         label_visibility="collapsed"
     )
 
     if menu == "대시보드":
         show_dashboard(db)
+    elif menu == "📋 참석 관리":
+        show_attendance(db)
     elif menu == "🧠 AI 코치":
         show_ai_coach(db)
     elif menu == "성장 리포트":
@@ -507,6 +509,155 @@ def show_dashboard(db):
         )
     else:
         st.info("등록된 경기가 없습니다.")
+
+
+def show_attendance(db):
+    """참석 관리 화면"""
+    st.title("📋 참석 관리")
+
+    players = load_players(db)
+    games = load_games(db)
+
+    if len(players) == 0:
+        st.warning("먼저 선수를 등록해주세요.")
+        return
+
+    # 탭: 참석 기록 / 참석률 통계
+    tab1, tab2, tab3 = st.tabs(["📝 참석 체크", "📊 참석률 현황", "📅 경기별 참석"])
+
+    with tab1:
+        st.subheader("경기 참석 체크")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            game_date = st.date_input("경기 날짜")
+        with col2:
+            if len(games) > 0:
+                game_options = ["새 경기 (훈련/연습)"] + [f"{row['날짜']} vs {row['상대팀']}" for _, row in games.iterrows()]
+                selected_game = st.selectbox("경기 선택", game_options)
+                if selected_game == "새 경기 (훈련/연습)":
+                    game_id = f"TRAIN_{game_date.strftime('%Y%m%d')}"
+                else:
+                    game_id = games[games.apply(lambda r: f"{r['날짜']} vs {r['상대팀']}" == selected_game, axis=1)]['경기ID'].iloc[0]
+            else:
+                game_id = f"TRAIN_{game_date.strftime('%Y%m%d')}"
+                st.info("등록된 경기가 없습니다. 훈련/연습으로 기록됩니다.")
+
+        st.divider()
+
+        # 전체 선택/해제 버튼
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            if st.button("전체 참석"):
+                st.session_state['attendance_all'] = True
+        with col2:
+            if st.button("전체 불참"):
+                st.session_state['attendance_all'] = False
+
+        st.markdown("### 선수별 참석 체크")
+
+        # 선수 목록과 체크박스
+        attendance_records = []
+        cols = st.columns(3)
+
+        for idx, (_, player) in enumerate(players.iterrows()):
+            col_idx = idx % 3
+            with cols[col_idx]:
+                default_val = st.session_state.get('attendance_all', True)
+                attended = st.checkbox(
+                    f"{player['이름']}",
+                    value=default_val,
+                    key=f"att_{player['선수ID']}"
+                )
+                attendance_records.append({
+                    'game_id': game_id,
+                    'game_date': game_date.strftime('%Y-%m-%d'),
+                    'player_id': player['선수ID'],
+                    'player_name': player['이름'],
+                    'attended': attended,
+                    'reason': ''
+                })
+
+        st.divider()
+
+        if st.button("참석 기록 저장", type="primary", use_container_width=True):
+            try:
+                count = db.add_attendance_batch(attendance_records)
+                attended_count = sum(1 for r in attendance_records if r['attended'])
+                st.success(f"✅ {count}명 참석 기록 저장 완료! (참석: {attended_count}명, 불참: {count - attended_count}명)")
+                st.cache_data.clear()
+                time.sleep(1)
+                st.rerun()
+            except Exception as e:
+                st.error(f"저장 중 오류: {e}")
+
+    with tab2:
+        st.subheader("선수별 참석률 현황")
+
+        try:
+            stats = db.get_attendance_stats()
+            if len(stats) > 0:
+                # 참석률에 따른 색상
+                def highlight_rate(val):
+                    if isinstance(val, (int, float)):
+                        if val >= 80:
+                            return 'background-color: #1b5e20; color: white'
+                        elif val >= 60:
+                            return 'background-color: #f57f17; color: white'
+                        else:
+                            return 'background-color: #b71c1c; color: white'
+                    return ''
+
+                styled_df = stats.style.map(highlight_rate, subset=['참석률'])
+                st.dataframe(styled_df, hide_index=True, use_container_width=True)
+
+                # 요약 통계
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    avg_rate = stats['참석률'].mean()
+                    st.metric("평균 참석률", f"{avg_rate:.1f}%")
+                with col2:
+                    best_player = stats.iloc[0]['선수명'] if len(stats) > 0 else "-"
+                    best_rate = stats.iloc[0]['참석률'] if len(stats) > 0 else 0
+                    st.metric("최고 참석률", f"{best_player} ({best_rate}%)")
+                with col3:
+                    total_games = stats['총경기'].max() if len(stats) > 0 else 0
+                    st.metric("총 기록된 경기", f"{total_games}경기")
+            else:
+                st.info("아직 참석 기록이 없습니다.")
+        except Exception as e:
+            st.error(f"참석률 조회 중 오류: {e}")
+
+    with tab3:
+        st.subheader("경기별 참석 현황")
+
+        try:
+            attendance_df = db.get_attendance()
+            if len(attendance_df) > 0:
+                # 경기별로 그룹화
+                game_dates = attendance_df['경기일'].unique()
+                selected_date = st.selectbox("경기 날짜 선택", sorted(game_dates, reverse=True))
+
+                game_attendance = attendance_df[attendance_df['경기일'] == selected_date]
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("#### ✅ 참석")
+                    attended = game_attendance[game_attendance['참석여부'] == '참석']['선수명'].tolist()
+                    for name in attended:
+                        st.write(f"• {name}")
+                    st.caption(f"총 {len(attended)}명")
+
+                with col2:
+                    st.markdown("#### ❌ 불참")
+                    absent = game_attendance[game_attendance['참석여부'] == '불참']['선수명'].tolist()
+                    for name in absent:
+                        st.write(f"• {name}")
+                    st.caption(f"총 {len(absent)}명")
+            else:
+                st.info("아직 참석 기록이 없습니다.")
+        except Exception as e:
+            st.error(f"경기별 참석 조회 중 오류: {e}")
 
 
 def show_game_recording(db):

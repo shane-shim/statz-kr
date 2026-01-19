@@ -23,6 +23,7 @@ SHEET_PLAYERS = "선수"
 SHEET_GAMES = "경기"
 SHEET_AT_BATS = "타석기록"
 SHEET_PITCHING = "투구기록"
+SHEET_ATTENDANCE = "참석기록"
 
 
 class SheetsDB:
@@ -196,6 +197,65 @@ class SheetsDB:
         if player_id and len(df) > 0:
             df = df[df['선수ID'] == player_id]
         return df
+
+    # === 참석 기록 ===
+
+    def get_attendance_sheet(self) -> gspread.Worksheet:
+        headers = ["기록ID", "경기ID", "경기일", "선수ID", "선수명", "참석여부", "사유", "기록일시"]
+        return self._get_or_create_sheet(SHEET_ATTENDANCE, headers)
+
+    def add_attendance(self, game_id: str, game_date: str, player_id: str, player_name: str,
+                       attended: bool, reason: str = "") -> str:
+        """참석 기록 추가"""
+        sheet = self.get_attendance_sheet()
+        record_id = f"ATT{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+        sheet.append_row([
+            record_id, game_id, game_date, player_id, player_name,
+            "참석" if attended else "불참", reason,
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ])
+        return record_id
+
+    def add_attendance_batch(self, records: list) -> int:
+        """참석 기록 배치 추가"""
+        if not records:
+            return 0
+        sheet = self.get_attendance_sheet()
+        rows = []
+        for r in records:
+            record_id = f"ATT{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+            rows.append([
+                record_id, r['game_id'], r['game_date'], r['player_id'], r['player_name'],
+                "참석" if r['attended'] else "불참", r.get('reason', ''),
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            ])
+        sheet.append_rows(rows)
+        return len(rows)
+
+    def get_attendance(self, game_id: Optional[str] = None, player_id: Optional[str] = None) -> pd.DataFrame:
+        """참석 기록 조회"""
+        sheet = self.get_attendance_sheet()
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
+        if game_id and len(df) > 0:
+            df = df[df['경기ID'] == game_id]
+        if player_id and len(df) > 0:
+            df = df[df['선수ID'] == player_id]
+        return df
+
+    def get_attendance_stats(self) -> pd.DataFrame:
+        """선수별 참석률 통계"""
+        df = self.get_attendance()
+        if len(df) == 0:
+            return pd.DataFrame(columns=['선수명', '총경기', '참석', '불참', '참석률'])
+
+        stats = df.groupby(['선수ID', '선수명']).agg(
+            총경기=('기록ID', 'count'),
+            참석=('참석여부', lambda x: (x == '참석').sum())
+        ).reset_index()
+        stats['불참'] = stats['총경기'] - stats['참석']
+        stats['참석률'] = (stats['참석'] / stats['총경기'] * 100).round(1)
+        return stats[['선수명', '총경기', '참석', '불참', '참석률']].sort_values('참석률', ascending=False)
 
 
 class SheetsDBFromSecrets(SheetsDB):
