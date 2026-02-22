@@ -460,7 +460,7 @@ def show_dashboard(db):
                 player_abs = at_bats[at_bats['선수ID'] == player_id]
                 player_name = player_abs['선수명'].iloc[0]
                 stats = calculate_player_batting_stats(player_abs)
-                if stats.at_bats >= 5:  # 최소 5타수
+                if stats.at_bats >= 1:  # 최소 1타수
                     avg = SabermetricsCalculator.avg(stats)
                     if avg:
                         player_avgs.append({
@@ -488,7 +488,7 @@ def show_dashboard(db):
                 player_abs = at_bats[at_bats['선수ID'] == player_id]
                 player_name = player_abs['선수명'].iloc[0]
                 stats = calculate_player_batting_stats(player_abs)
-                if stats.at_bats >= 5:
+                if stats.at_bats >= 1:
                     ops = SabermetricsCalculator.ops(stats)
                     if ops:
                         player_ops.append({
@@ -1793,7 +1793,7 @@ def show_team_insight(db):
             if len(player_abs) > 0:
                 stats = calculate_player_batting_stats(player_abs)
                 calc = SabermetricsCalculator
-                if stats.at_bats >= 3:  # 최소 3타수
+                if stats.at_bats >= 1:  # 최소 1타수
                     avg = calc.avg(stats) or 0
                     ops = calc.ops(stats) or 0
                     obp = calc.obp(stats) or 0
