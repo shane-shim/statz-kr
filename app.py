@@ -1799,6 +1799,8 @@ def show_team_insight(db):
                     obp = calc.obp(stats) or 0
                     slg = calc.slg(stats) or 0
 
+                    woba = calc.woba(stats) or 0
+
                     player_stats_list.append({
                         '선수': player['이름'],
                         '타수': stats.at_bats,
@@ -1807,6 +1809,7 @@ def show_team_insight(db):
                         '출루율': obp,
                         '장타율': slg,
                         'OPS': ops,
+                        'wOBA': woba,
                         '홈런': stats.home_runs,
                         '타점': stats.rbis,
                         '삼진': stats.strikeouts,
@@ -1829,6 +1832,7 @@ def show_team_insight(db):
             styled_df['출루율'] = styled_df['출루율'].apply(lambda x: f"{x:.3f}")
             styled_df['장타율'] = styled_df['장타율'].apply(lambda x: f"{x:.3f}")
             styled_df['OPS'] = styled_df['OPS'].apply(lambda x: f"{x:.3f}")
+            styled_df['wOBA'] = styled_df['wOBA'].apply(lambda x: f"{x:.3f}")
 
             st.dataframe(styled_df, hide_index=True, use_container_width=True)
 
@@ -1844,7 +1848,7 @@ def show_team_insight(db):
                 if len(compare_players) >= 2:
                     fig = go.Figure()
 
-                    categories = ['타율', '출루율', '장타율']
+                    categories = ['타율', '출루율', '장타율', 'wOBA']
 
                     for player_name in compare_players:
                         player_data = next((p for p in player_stats_list if p['선수'] == player_name), None)
@@ -1854,6 +1858,7 @@ def show_team_insight(db):
                                 min(player_data['타율'] / 0.4, 1),
                                 min(player_data['출루율'] / 0.5, 1),
                                 min(player_data['장타율'] / 0.6, 1),
+                                min(player_data['wOBA'] / 0.45, 1),
                             ]
                             values.append(values[0])  # 닫기
 
@@ -1976,6 +1981,12 @@ def show_team_insight(db):
                     medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉"
                     st.markdown(f"{medal} **{p['선수']}** - {p['OPS']:.3f}")
 
+                st.markdown("**wOBA TOP 3**")
+                top_woba = sorted(player_stats_list, key=lambda x: x['wOBA'], reverse=True)[:3]
+                for i, p in enumerate(top_woba, 1):
+                    medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉"
+                    st.markdown(f"{medal} **{p['선수']}** - {p['wOBA']:.3f}")
+
                 st.markdown("**타점 TOP 3**")
                 top_rbi = sorted(player_stats_list, key=lambda x: x['타점'], reverse=True)[:3]
                 for i, p in enumerate(top_rbi, 1):
@@ -1988,17 +1999,20 @@ def show_team_insight(db):
 
             team_avg = sum(p['타율'] for p in player_stats_list) / len(player_stats_list)
             team_ops = sum(p['OPS'] for p in player_stats_list) / len(player_stats_list)
+            team_woba = sum(p['wOBA'] for p in player_stats_list) / len(player_stats_list)
             team_hr = sum(p['홈런'] for p in player_stats_list)
             team_rbi = sum(p['타점'] for p in player_stats_list)
 
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3, col4, col5 = st.columns(5)
             with col1:
                 display_stat_with_grade("팀 평균 타율", team_avg, "AVG")
             with col2:
                 display_stat_with_grade("팀 평균 OPS", team_ops, "OPS")
             with col3:
-                st.metric("팀 총 홈런", f"{team_hr}개")
+                display_stat_with_grade("팀 평균 wOBA", team_woba, "wOBA")
             with col4:
+                st.metric("팀 총 홈런", f"{team_hr}개")
+            with col5:
                 st.metric("팀 총 타점", f"{team_rbi}점")
         else:
             st.info("충분한 기록이 있는 선수가 필요합니다.")
