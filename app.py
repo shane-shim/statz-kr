@@ -1653,6 +1653,7 @@ def show_ai_coach(db):
                     continue
 
                 avg = calc.avg(stats) or 0
+                obp = calc.obp(stats) or 0
                 ops = calc.ops(stats) or 0
                 iso = calc.iso(stats) or 0
                 k_rate = (stats.strikeouts / stats.plate_appearances * 100) if stats.plate_appearances > 0 else 0
