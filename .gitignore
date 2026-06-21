@@ -15,3 +15,7 @@ venv/
 
 # OS
 .DS_Store
+
+# yaguin crawler secrets
+crawler/auth_state.json
+crawler/.venv/

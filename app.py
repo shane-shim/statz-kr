@@ -510,16 +510,31 @@ def show_dashboard(db):
         else:
             st.info("기록된 타석이 없습니다.")
 
-    # 최근 경기
+    # 팀 경기 (리그별 · 과거순)
     st.divider()
-    st.subheader("최근 경기")
+    st.subheader("팀 경기")
     if len(games) > 0:
-        recent_games = games.tail(5).iloc[::-1]
-        st.dataframe(
-            recent_games[['날짜', '상대팀', '홈/원정', '우리점수', '상대점수', '결과']],
-            hide_index=True,
-            use_container_width=True
-        )
+        cols = ['날짜', '상대팀', '홈/원정', '우리점수', '상대점수', '결과']
+        league_col = '메모' if '메모' in games.columns else None
+        # 리그 표시 순서 고정
+        order = ['일요루키A', '일요루키B', '일요우수']
+        leagues = []
+        if league_col:
+            present = [l for l in games[league_col].dropna().unique() if str(l).strip()]
+            leagues = [l for l in order if l in present] + [l for l in present if l not in order]
+        if not leagues:
+            leagues = [None]
+        for lg in leagues:
+            sub = games if lg is None else games[games[league_col] == lg]
+            sub = sub.sort_values('날짜', ascending=True)  # 과거 → 최근
+            if len(sub) == 0:
+                continue
+            w = len(sub[sub['결과'] == '승'])
+            l = len(sub[sub['결과'] == '패'])
+            d = len(sub[sub['결과'] == '무'])
+            title = lg if lg else '전체'
+            st.markdown(f"**{title}**  ·  {len(sub)}경기  {w}승 {l}패" + (f" {d}무" if d else ""))
+            st.dataframe(sub[cols], hide_index=True, use_container_width=True)
     else:
         st.info("등록된 경기가 없습니다.")
 
